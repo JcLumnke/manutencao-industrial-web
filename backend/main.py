@@ -40,6 +40,19 @@ if genai_name:
 else:
     logging.info("No GenAI library (google.genai or google.generativeai) is available")
 
+# Explicitly configure genai using environment variable (use os.environ to match request)
+try:
+    if genai is not None:
+        # This uses os.environ[...] as requested so missing key surfaces clearly
+        genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+        logging.info("Called genai.configure(api_key=...) successfully")
+except KeyError as e:
+    logging.error("GEMINI_API_KEY missing in environment: %s", e)
+    print(str(e))
+except Exception as e:
+    logging.exception("Failed to configure genai via genai.configure(): %s", str(e))
+    print(str(e))
+
 app = FastAPI(title="Motor de Diagnóstico - Backend")
 
 # CORS configuration: allow all origins (temporary for frontend testing)
@@ -181,81 +194,132 @@ def call_gemini(prompt: str) -> str:
     if genai is None:
         raise RuntimeError("Nenhuma biblioteca GenAI disponível. Instale 'google-genai' ou 'google-generativeai'.")
 
-    key = os.getenv("GEMINI_API_KEY")
-    if not key:
+    if "GEMINI_API_KEY" not in os.environ:
         raise RuntimeError("Variável de ambiente GEMINI_API_KEY não definida.")
 
-    model = os.getenv("GEMINI_MODEL", "gpt-4o-mini")
+    model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 
     errors = []
 
-    # Try modern google.genai TextGenerationClient
+    # ensure genai is configured (attempt again with explicit os.environ access)
+    try:
+        if hasattr(genai, "configure"):
+            genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+            logging.info("genai.configure(api_key=...) executed in call_gemini")
+    except Exception as e:
+        logging.exception("Failed to run genai.configure in call_gemini: %s", str(e))
+        print(str(e))
+        errors.append(f"configure: {type(e).__name__}: {str(e)}")
+
+    # Try GenerativeModel (preferred new API)
+    if hasattr(genai, "GenerativeModel"):
+        try:
+            logging.info("Trying genai.GenerativeModel('%s')", model_name)
+            gm = genai.GenerativeModel(model_name)
+            if hasattr(gm, "generate_content"):
+                try:
+                    resp = gm.generate_content(prompt)
+                    text = _extract_text_from_resp(resp)
+                    if text:
+                        return text
+                except Exception as e:
+                    logging.exception("GenerativeModel.generate_content error: %s", str(e))
+                    print(str(e))
+                    errors.append(f"GenerativeModel.generate_content: {type(e).__name__}: {str(e)}")
+            if hasattr(gm, "generate"):
+                try:
+                    resp = gm.generate(prompt)
+                    text = _extract_text_from_resp(resp)
+                    if text:
+                        return text
+                except Exception as e:
+                    logging.exception("GenerativeModel.generate error: %s", str(e))
+                    print(str(e))
+                    errors.append(f"GenerativeModel.generate: {type(e).__name__}: {str(e)}")
+        except Exception as e:
+            logging.exception("Failed to instantiate/use GenerativeModel: %s", str(e))
+            print(str(e))
+            errors.append(f"GenerativeModel: {type(e).__name__}: {str(e)}")
+
+    # Try modern TextGenerationClient
     if hasattr(genai, "TextGenerationClient"):
         try:
             logging.info("Calling Gemini via TextGenerationClient")
             client = genai.TextGenerationClient()
-            # try common kwarg names
             for kw in ("prompt", "input", "text", "messages"):
                 try:
-                    resp = client.generate_text(model=model, **{kw: prompt})
+                    if hasattr(client, "generate_text"):
+                        resp = client.generate_text(model=model_name, **{kw: prompt})
+                    elif hasattr(client, "generate"):
+                        resp = client.generate(model=model_name, **{kw: prompt})
+                    else:
+                        continue
                     text = _extract_text_from_resp(resp)
                     if text:
                         return text
                 except TypeError:
                     continue
+                except Exception as e:
+                    logging.exception("TextGenerationClient call error: %s", str(e))
+                    print(str(e))
+                    errors.append(f"TextGenerationClient.call: {type(e).__name__}: {str(e)}")
         except Exception as e:
-            logging.exception("Error calling TextGenerationClient")
-            errors.append(f"TextGenerationClient: {type(e).__name__}: {e}")
+            logging.exception("Error creating TextGenerationClient: %s", str(e))
+            print(str(e))
+            errors.append(f"TextGenerationClient: {type(e).__name__}: {str(e)}")
 
-    # Try module-level generate_text
+    # module-level generate_text
     if hasattr(genai, "generate_text"):
         try:
             logging.info("Calling genai.generate_text()")
-            resp = genai.generate_text(model=model, prompt=prompt)
+            resp = genai.generate_text(model=model_name, prompt=prompt)
             text = _extract_text_from_resp(resp)
             if text:
                 return text
         except Exception as e:
-            logging.exception("Error calling genai.generate_text")
-            errors.append(f"generate_text: {type(e).__name__}: {e}")
+            logging.exception("Error calling genai.generate_text: %s", str(e))
+            print(str(e))
+            errors.append(f"generate_text: {type(e).__name__}: {str(e)}")
 
-    # Older google.generativeai / chat completions
+    # Older chat completions
     try:
         if hasattr(genai, "chat") and hasattr(genai.chat, "completions"):
             logging.info("Calling genai.chat.completions.create()")
-            resp = genai.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}])
+            resp = genai.chat.completions.create(model=model_name, messages=[{"role": "user", "content": prompt}])
             text = _extract_text_from_resp(resp)
             if text:
                 return text
     except Exception as e:
-        logging.exception("Error calling genai.chat.completions.create")
-        errors.append(f"chat.completions: {type(e).__name__}: {e}")
+        logging.exception("Error calling genai.chat.completions.create: %s", str(e))
+        print(str(e))
+        errors.append(f"chat.completions: {type(e).__name__}: {str(e)}")
 
     # older text.generate
     try:
         if hasattr(genai, "text") and hasattr(genai.text, "generate"):
             logging.info("Calling genai.text.generate()")
-            resp = genai.text.generate(model=model, prompt=prompt)
+            resp = genai.text.generate(model=model_name, prompt=prompt)
             text = _extract_text_from_resp(resp)
             if text:
                 return text
     except Exception as e:
-        logging.exception("Error calling genai.text.generate")
-        errors.append(f"text.generate: {type(e).__name__}: {e}")
+        logging.exception("Error calling genai.text.generate: %s", str(e))
+        print(str(e))
+        errors.append(f"text.generate: {type(e).__name__}: {str(e)}")
 
-    # general fallback: try genai.generate_text or genai.generate
+    # general fallback: try genai.generate
     try:
         if hasattr(genai, "generate"):
             logging.info("Calling genai.generate() fallback")
-            resp = genai.generate(model=model, prompt=prompt)
+            resp = genai.generate(model=model_name, prompt=prompt)
             text = _extract_text_from_resp(resp)
             if text:
                 return text
     except Exception as e:
-        logging.exception("Error calling genai.generate")
-        errors.append(f"generate: {type(e).__name__}: {e}")
+        logging.exception("Error calling genai.generate: %s", str(e))
+        print(str(e))
+        errors.append(f"generate: {type(e).__name__}: {str(e)}")
 
-    # If we got here, none of the attempts returned usable text
     logging.error("All Gemini call methods failed: %s", errors)
     raise RuntimeError("Erro ao chamar API Gemini. Detalhes: " + " | ".join(errors))
 
