@@ -15,17 +15,48 @@ try:
 except Exception:
     genai = None
 
-# Explicitly configure genai with GEMINI_API_KEY (will raise KeyError if missing)
-try:
-    if genai is not None:
-        genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-        logging.info("genai.configure called")
-except KeyError as e:
-    logging.error("GEMINI_API_KEY missing: %s", e)
-    print(str(e))
-except Exception as e:
-    logging.exception("genai.configure failed: %s", str(e))
-    print(str(e))
+# Try to configure genai and prefer the stable v1 API when possible.
+if genai is not None:
+    # Print library version for SquareCloud logs (best-effort)
+    genai_version = None
+    try:
+        genai_version = getattr(genai, "__version__", None)
+    except Exception:
+        genai_version = None
+    if not genai_version:
+        try:
+            import importlib.metadata as importlib_metadata
+
+            genai_version = importlib_metadata.version("google-generativeai")
+        except Exception:
+            genai_version = "unknown"
+    print(f"GENAI LIB: google-generativeai version={genai_version}")
+
+    # Prefer configuring api_base to v1 if the configure function accepts it.
+    try:
+        try:
+            genai.configure(api_key=os.environ["GEMINI_API_KEY"], api_base="https://generative.googleapis.com/v1")
+            print("genai.configure called with api_base=https://generative.googleapis.com/v1")
+        except TypeError:
+            # Older/newer versions may not accept api_base kwarg
+            genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+            print("genai.configure called (no api_base kwarg)")
+    except KeyError as e:
+        logging.error("GEMINI_API_KEY missing: %s", e)
+        print(str(e))
+    except Exception as e:
+        # Log and continue; we'll surface errors when requests are made
+        logging.exception("genai.configure failed: %s", str(e))
+        print(f"genai.configure failed: {e}")
+
+    # Best-effort: set common attributes that may force v1 endpoints
+    for attr, val in (("api_version", "v1"), ("api_base", "https://generative.googleapis.com/v1")):
+        try:
+            if hasattr(genai, attr):
+                setattr(genai, attr, val)
+                print(f"Set genai.{attr} = {val}")
+        except Exception:
+            pass
 
 
 app = FastAPI(title="Motor de Diagnóstico - Backend")
@@ -198,14 +229,30 @@ async def diagnose(req: DiagnoseRequest):
             if "GEMINI_API_KEY" not in os.environ:
                 raise RuntimeError("Variável de ambiente GEMINI_API_KEY não definida.")
 
-            # Use the explicit GenerativeModel as requested
-            model = genai.GenerativeModel("gemini-1.5-flash")
-            response = model.generate_content(prompt)
-            # Prefer .text but fall back to extractor if needed
-            text = getattr(response, "text", None)
-            if not text:
-                text = _extract_text_from_resp(response)
-            raw = text if isinstance(text, str) else json.dumps(text, ensure_ascii=False)
+            # Try the preferred model(s). First attempt gemini-1.5-flash,
+            # then fall back to gemini-pro if the first is not available.
+            raw = None
+            last_exc = None
+            for model_name in ("gemini-1.5-flash", "gemini-pro"):
+                try:
+                    model = genai.GenerativeModel(model_name)
+                    response = model.generate_content(prompt)
+                    # Prefer .text but fall back to extractor if needed
+                    text = getattr(response, "text", None)
+                    if not text:
+                        text = _extract_text_from_resp(response)
+                    raw = text if isinstance(text, str) else json.dumps(text, ensure_ascii=False)
+                    print(f"Used model: {model_name}")
+                    break
+                except Exception as e:
+                    print(f"ERRO REAL (model={model_name}): {e}")
+                    traceback.print_exc()
+                    last_exc = e
+            if raw is None:
+                # Surface the last exception back to the client/logs
+                if last_exc is not None:
+                    raise HTTPException(status_code=500, detail=f"ERRO: {type(last_exc).__name__}: {str(last_exc)}")
+                raise HTTPException(status_code=500, detail="ERRO: Falha desconhecida ao chamar o modelo generativo")
         except Exception as e:
             print(f'ERRO REAL: {e}')
             traceback.print_exc()
