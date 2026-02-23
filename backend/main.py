@@ -32,7 +32,6 @@ if genai is not None:
     if not genai_version:
         try:
             import importlib.metadata as importlib_metadata
-
             genai_version = importlib_metadata.version("google-generativeai")
         except Exception:
             genai_version = "unknown"
@@ -171,11 +170,6 @@ def _extract_text_from_resp(resp: Any) -> str:
         return ""
 
 
-# The previous flexible `call_gemini` adapter has been removed to simplify
-# integration. The `/diagnose` endpoint will directly instantiate the
-# GenerativeModel and call `generate_content(...)` as requested.
-
-
 def extract_json_from_text(text: str):
     try:
         return json.loads(text)
@@ -199,7 +193,6 @@ async def root():
 @app.post("/diagnose", response_model=DiagnoseResponse)
 async def diagnose(req: DiagnoseRequest):
     prompt = build_prompt(req)
-    # Local test mode returns canned JSON (keeps previous sample for offline testing)
     if os.getenv("GEMINI_TEST_MODE") == "1":
         sample = {
             "summary": "Vibração excessiva no eixo e aumento de temperatura do motor",
@@ -236,13 +229,11 @@ async def diagnose(req: DiagnoseRequest):
             if "GEMINI_API_KEY" not in os.environ:
                 raise RuntimeError("Variável de ambiente GEMINI_API_KEY não definida.")
 
-            # Try the preferred model(s). First attempt gemini-1.5-flash,
-            # then fall back to gemini-pro if the first is not available.
             raw = None
             last_exc = None
-            for model_name in ("gemini-pro", "gemini-1.5-flash"):
+            # Alteração do nome do modelo conforme sugerido para suportar Gemini 2.0 Flash
+            for model_name in ("gemini-2.0-flash", "gemini-flash-latest"):
                 try:
-                    # Try to force using v1 when creating the GenerativeModel
                     try:
                         model = genai.GenerativeModel(model_name, api_version="v1")
                     except TypeError:
@@ -256,7 +247,6 @@ async def diagnose(req: DiagnoseRequest):
                             pass
 
                     response = model.generate_content(prompt)
-                    # Prefer .text but fall back to extractor if needed
                     text = getattr(response, "text", None)
                     if not text:
                         text = _extract_text_from_resp(response)
@@ -268,7 +258,6 @@ async def diagnose(req: DiagnoseRequest):
                     traceback.print_exc()
                     last_exc = e
             if raw is None:
-                # If model calls failed, try listing models allowed for this key (best-effort)
                 try:
                     if genai is not None and hasattr(genai, "list_models"):
                         try:
@@ -285,14 +274,12 @@ async def diagnose(req: DiagnoseRequest):
                 except Exception:
                     pass
 
-                # Surface the last exception back to the client/logs
                 if last_exc is not None:
                     raise HTTPException(status_code=500, detail=f"ERRO: {type(last_exc).__name__}: {str(last_exc)}")
                 raise HTTPException(status_code=500, detail="ERRO: Falha desconhecida ao chamar o modelo generativo")
         except Exception as e:
             print(f'ERRO REAL: {e}')
             traceback.print_exc()
-            # Ensure frontend receives meaningful error detail
             raise HTTPException(status_code=500, detail=f"ERRO: {type(e).__name__}: {str(e)}")
 
     try:
