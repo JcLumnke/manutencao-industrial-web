@@ -1,6 +1,5 @@
 fastapi==0.129.2
 uvicorn[standard]==0.41.0
-# Prefer the new GenAI client and allow the older package as fallback
-google-genai
+# Use google-generativeai only
 google-generativeai>=0.8.6
 python-dotenv
