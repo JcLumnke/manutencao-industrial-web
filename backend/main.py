@@ -51,7 +51,6 @@ if genai is not None:
         logging.error("GEMINI_API_KEY missing: %s", e)
         print(str(e))
     except Exception as e:
-        # Log and continue; we'll surface errors when requests are made
         logging.exception("genai.configure failed: %s", str(e))
         print(f"genai.configure failed: {e}")
 
@@ -67,7 +66,6 @@ if genai is not None:
 
 app = FastAPI(title="Motor de Diagnóstico - Backend")
 
-# Temporary: allow all origins for testing
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -79,6 +77,7 @@ app.add_middleware(
 
 class DiagnoseRequest(BaseModel):
     symptoms: str = Field(..., description="Descrição dos sintomas")
+    equipment_name: Optional[str] = "Não informado"  # NOVO CAMPO ADICIONADO
     machine_id: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
 
@@ -89,7 +88,9 @@ class DiagnoseResponse(BaseModel):
 
 
 def build_prompt(req: DiagnoseRequest) -> str:
+
     parts = [
+        f"EQUIPAMENTO: {req.equipment_name}",
         "Você é um engenheiro de manutenção industrial experiente. Dados os sintomas abaixo, gere um único objeto JSON com os campos exatos:",
         "- summary: resumo conciso do problema",
         "- probable_causes: lista de objetos {cause: string, likelihood: number 0-100}",
@@ -110,7 +111,7 @@ def build_prompt(req: DiagnoseRequest) -> str:
         req.symptoms,
     ]
     if req.machine_id:
-        parts.insert(0, f"Machine ID: {req.machine_id}")
+        parts.insert(1, f"Machine ID: {req.machine_id}")
     if req.metadata:
         parts.append("METADATA:")
         parts.append(json.dumps(req.metadata, ensure_ascii=False))
@@ -125,18 +126,8 @@ def _extract_text_from_resp(resp: Any) -> str:
                 if isinstance(c, dict):
                     return c.get("content") or c.get("text") or c.get("output") or str(c)
                 return str(c)
-            if "output" in resp:
-                return resp["output"]
-            if "content" in resp:
-                return resp["content"]
-            if "message" in resp:
-                m = resp["message"]
-                if isinstance(m, dict):
-                    return m.get("content") or m.get("text") or str(m)
-                return str(m)
     except Exception:
         pass
-
     try:
         if hasattr(resp, "candidates"):
             cand = getattr(resp, "candidates")
@@ -146,28 +137,9 @@ def _extract_text_from_resp(resp: Any) -> str:
                     return first.content
                 if hasattr(first, "text"):
                     return first.text
-                return str(first)
-        if hasattr(resp, "choices"):
-            choices = getattr(resp, "choices")
-            if choices:
-                ch = choices[0]
-                if hasattr(ch, "message") and hasattr(ch.message, "content"):
-                    return ch.message.content
-                if hasattr(ch, "content"):
-                    return ch.content
-        if hasattr(resp, "output_text"):
-            return getattr(resp, "output_text")
-        if hasattr(resp, "text"):
-            return getattr(resp, "text")
-        if hasattr(resp, "output"):
-            return getattr(resp, "output")
     except Exception:
         pass
-
-    try:
-        return str(resp)
-    except Exception:
-        return ""
+    return str(resp)
 
 
 def extract_json_from_text(text: str):
@@ -194,58 +166,18 @@ async def root():
 async def diagnose(req: DiagnoseRequest):
     prompt = build_prompt(req)
     if os.getenv("GEMINI_TEST_MODE") == "1":
-        sample = {
-            "summary": "Vibração excessiva no eixo e aumento de temperatura do motor",
-            "probable_causes": [
-                {"cause": "desbalanceamento do rotor", "likelihood": 70},
-                {"cause": "rolamento desgastado", "likelihood": 60}
-            ],
-            "severity": "high",
-            "recommended_actions": [
-                "Parar máquina e inspecionar rolamentos",
-                "Verificar alinhamento do eixo",
-                "Substituir peças danificadas"
-            ],
-            "troubleshooting_steps": [
-                "Medir vibração com vibrômetro",
-                "Inspeção visual do rotor",
-                "Verificar corrente e tensão do motor"
-            ],
-            "estimated_parts": ["Rolamento - P/N 1234", "Junta - P/N 5678"],
-            "estimated_time_hours": 3.5,
-            "confidence": 0.85,
-            "required_tools": ["Chave dinamométrica", "Vibrômetro", "Termômetro infravermelho"],
-            "recommended_tests": ["Teste de vibração (ISO 10816)", "Medição de temperatura em 3 pontos"],
-            "logs_needed": ["Últimos 24h de corrente do motor", "Logs de manutenção últimos 6 meses"],
-            "component": "motor",
-            "category": "mechanical",
-            "maintenance_priority": 2,
-        }
+        sample = {"summary": "Modo teste ativo", "confidence": 0.99}
         raw = json.dumps(sample, ensure_ascii=False)
     else:
         try:
             if genai is None:
-                raise RuntimeError("Nenhuma biblioteca GenAI disponível. Instale 'google-generativeai'.")
-            if "GEMINI_API_KEY" not in os.environ:
-                raise RuntimeError("Variável de ambiente GEMINI_API_KEY não definida.")
-
+                raise RuntimeError("Biblioteca GenAI não disponível.")
+            
             raw = None
             last_exc = None
-            # Alteração do nome do modelo conforme sugerido para suportar Gemini 2.0 Flash
             for model_name in ("gemini-2.0-flash", "gemini-flash-latest"):
                 try:
-                    try:
-                        model = genai.GenerativeModel(model_name, api_version="v1")
-                    except TypeError:
-                        model = genai.GenerativeModel(model_name)
-                        try:
-                            if hasattr(model, "api_version"):
-                                setattr(model, "api_version", "v1")
-                            elif hasattr(model, "version"):
-                                setattr(model, "version", "v1")
-                        except Exception:
-                            pass
-
+                    model = genai.GenerativeModel(model_name)
                     response = model.generate_content(prompt)
                     text = getattr(response, "text", None)
                     if not text:
@@ -255,37 +187,19 @@ async def diagnose(req: DiagnoseRequest):
                     break
                 except Exception as e:
                     print(f"ERRO REAL (model={model_name}): {e}")
-                    traceback.print_exc()
                     last_exc = e
+            
             if raw is None:
-                try:
-                    if genai is not None and hasattr(genai, "list_models"):
-                        try:
-                            models = genai.list_models()
-                            names = []
-                            for m in models:
-                                try:
-                                    names.append(m.name)
-                                except Exception:
-                                    names.append(str(m))
-                            print("Available models via genai.list_models():", names)
-                        except Exception as le:
-                            print("Could not list models via genai.list_models():", le)
-                except Exception:
-                    pass
-
-                if last_exc is not None:
-                    raise HTTPException(status_code=500, detail=f"ERRO: {type(last_exc).__name__}: {str(last_exc)}")
-                raise HTTPException(status_code=500, detail="ERRO: Falha desconhecida ao chamar o modelo generativo")
+                if last_exc:
+                    raise HTTPException(status_code=500, detail=f"ERRO: {str(last_exc)}")
         except Exception as e:
-            print(f'ERRO REAL: {e}')
             traceback.print_exc()
-            raise HTTPException(status_code=500, detail=f"ERRO: {type(e).__name__}: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"ERRO: {str(e)}")
 
     try:
         parsed = extract_json_from_text(raw)
     except ValueError:
-        parsed = {"error": "Não foi possível parsear JSON da resposta do modelo.", "raw": raw}
+        parsed = {"error": "Falha no parse do JSON", "raw": raw}
     return {"diagnosis": parsed, "raw_output": raw}
 
 
