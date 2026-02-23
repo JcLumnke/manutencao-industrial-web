@@ -2,16 +2,11 @@ import React, { useState } from 'react'
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://manutencao-industrial-julio.squareweb.app'
 
-function SafeJsonPreview({ data }) {
-  return (
-    <pre className="raw">{JSON.stringify(data, null, 2)}</pre>
-  )
-}
-
 export default function App() {
+  const [activeTab, setActiveTab] = useState('diagnostico')
   const [symptoms, setSymptoms] = useState('')
   const [machineId, setMachineId] = useState('')
-  const [equipmentName, setEquipmentName] = useState('') // New state for equipment name
+  const [equipmentName, setEquipmentName] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [diagnosis, setDiagnosis] = useState(null)
@@ -25,167 +20,122 @@ export default function App() {
       const res = await fetch(`${API_URL}/diagnose`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // Added equipment_name to the payload
         body: JSON.stringify({ 
           symptoms, 
-          equipment_name: equipmentName || 'Not specified',
+          equipment_name: equipmentName || 'Machine',
           machine_id: machineId || undefined 
         })
       })
-      if (!res.ok) {
-        const text = await res.text()
-        throw new Error(`Erro ${res.status}: ${text}`)
-      }
+      if (!res.ok) throw new Error(`Status ${res.status}`)
       const json = await res.json()
-      // backend returns { diagnosis: {...}, raw_output: '...' }
       setDiagnosis(json.diagnosis || json)
     } catch (err) {
-      console.error(err)
-      setError(err.message || String(err))
+      setError(err.message)
     } finally {
       setLoading(false)
     }
   }
 
-  // Function to export diagnosis to CSV
-  function exportToCSV() {
-    if (!diagnosis) return;
-    
-    const rows = [
-      ["Field", "Value"],
-      ["Equipment", equipmentName || "N/A"],
-      ["Machine ID", machineId || "N/A"],
-      ["Summary", diagnosis.summary || ""],
-      ["Severity", diagnosis.severity || ""],
-      ["Confidence", diagnosis.confidence || ""],
-      ["---", "---"],
-      ["Probable Causes", "Likelihood"]
-    ];
-
-    if (diagnosis.probable_causes) {
-      diagnosis.probable_causes.forEach(c => {
-        rows.push([c.cause || c.name || c, `${c.likelihood || 0}%`]);
-      });
-    }
-
-    const csvContent = "data:text/csv;charset=utf-8," 
-      + rows.map(e => e.join(",")).join("\n");
-
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `report_${equipmentName || 'machine'}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }
-
-  function renderCauses(list) {
-    if (!list || !list.length) return <em>— não informado —</em>
+  function renderSeverityChart(severity, confidence) {
+    const confPct = Math.round((confidence || 0) * 100);
+    const color = severity === 'critical' ? '#ff4d4f' : '#faad14';
     return (
-      <div className="causes-list">
-        {list.map((c, i) => {
-          const name = c.cause ?? c.name ?? c;
-          const pct = c.likelihood ?? 0;
-          return (
-            <div key={i} style={{ marginBottom: '12px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
-                <span>{name}</span>
-                <span>{pct}%</span>
-              </div>
-              {/* Visual progress bar for likelihood */}
-              <div style={{ background: '#eee', borderRadius: '4px', height: '8px', marginTop: '4px' }}>
-                <div style={{ 
-                  background: pct > 70 ? '#ff4d4f' : '#1890ff', 
-                  width: `${pct}%`, 
-                  height: '100%', 
-                  borderRadius: '4px',
-                  transition: 'width 1s ease-in-out'
-                }} />
-              </div>
-            </div>
-          );
-        })}
+      <div className="severity-gauge" style={{ textAlign: 'center' }}>
+        <div style={{
+          width: '120px', height: '120px', borderRadius: '50%',
+          background: `conic-gradient(${color} ${confPct}%, #eee 0)`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto'
+        }}>
+          <div style={{ width: '90px', height: '90px', background: 'white', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontSize: '20px', fontWeight: 'bold' }}>{confPct}%</span>
+            <small style={{ fontSize: '10px', color: '#666' }}>{severity}</small>
+          </div>
+        </div>
+        <p style={{ marginTop: '10px', fontSize: '12px' }}>Risk & Confidence</p>
       </div>
-    )
+    );
   }
 
   return (
     <div className="app">
       <header className="hero">
         <h1>Diagnóstico de Manutenção</h1>
-        <p className="subtitle">Envie os sintomas e receba Causa, Risco e Ação recomendada.</p>
+        <p>Envie os sintomas e receba Causa, Risco e Ação recomendada.</p>
       </header>
 
-      <main className="container">
-        <form className="panel form" onSubmit={handleSubmit}>
-          <label>Equipment Name (equipamento)</label>
-          <input value={equipmentName} onChange={(e)=>setEquipmentName(e.target.value)} placeholder="Ex: Motor Principal, Prensa Hidráulica..." />
+      <nav className="tabs" style={{ display: 'flex', gap: '20px', padding: '10px 10% 0', borderBottom: '1px solid #ddd', background: '#fff' }}>
+        {['diagnostico', 'historico', 'dashboard', 'novo registro'].map(tab => (
+          <button 
+            key={tab} 
+            onClick={() => setActiveTab(tab)}
+            style={{ 
+              padding: '10px 20px', border: 'none', background: 'none', cursor: 'pointer',
+              borderBottom: activeTab === tab ? '2px solid #004a8c' : 'none',
+              fontWeight: activeTab === tab ? 'bold' : 'normal',
+              textTransform: 'capitalize'
+            }}
+          >
+            {tab}
+          </button>
+        ))}
+      </nav>
 
-          <label>Symptoms (sintomas)</label>
-          <textarea value={symptoms} onChange={(e)=>setSymptoms(e.target.value)} placeholder="Descreva os sintomas da máquina..." required rows={8} />
+      <main className="container" style={{ display: activeTab === 'diagnostico' ? 'grid' : 'block', padding: '20px 10%' }}>
+        {activeTab === 'diagnostico' ? (
+          <>
+            <form className="panel form" onSubmit={handleSubmit}>
+              <label>Equipment Name (equipamento)</label>
+              <input value={equipmentName} onChange={(e)=>setEquipmentName(e.target.value)} placeholder="Prensa hidraulica" />
 
-          <label>Machine ID (opcional)</label>
-          <input value={machineId} onChange={(e)=>setMachineId(e.target.value)} placeholder="ID da máquina (ex: M-1234)" />
+              <label>Symptoms (sintomas)</label>
+              <textarea value={symptoms} onChange={(e)=>setSymptoms(e.target.value)} placeholder="Descreva os sintomas..." required rows={6} />
 
-          <div className="actions">
-            <button className="primary" type="submit" disabled={loading}>{loading ? 'Analisando...' : 'Enviar para diagnóstico'}</button>
+              <label>Machine ID (opcional)</label>
+              <input value={machineId} onChange={(e)=>setMachineId(e.target.value)} placeholder="14" />
+
+              <button className="primary" type="submit" disabled={loading}>{loading ? 'Analisando...' : 'Enviar para diagnóstico'}</button>
+              {error && <div className="error">{error}</div>}
+            </form>
+
+            <section className="panel result">
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <h2>Resultado <small style={{ color: '#1890ff' }}>(para "{equipmentName || 'machine'}")</small></h2>
+                {diagnosis && <button className="export">Exportar CSV</button>}
+              </div>
+
+              {diagnosis ? (
+                <div className="grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                  <div className="card">
+                    <h3>Causa provável</h3>
+                    {diagnosis.probable_causes?.map((c, i) => (
+                      <div key={i} style={{ marginBottom: '15px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                          <span>{c.cause}</span>
+                          <span>{c.likelihood}%</span>
+                        </div>
+                        <div style={{ background: '#eee', height: '8px', borderRadius: '4px', marginTop: '5px' }}>
+                          <div style={{ background: '#ff7a45', width: `${c.likelihood}%`, height: '100%', borderRadius: '4px' }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="card">
+                    <h3>Risco</h3>
+                    <p>Severidade: <strong>{diagnosis.severity}</strong></p>
+                    {renderSeverityChart(diagnosis.severity, diagnosis.confidence)}
+                  </div>
+                </div>
+              ) : <p className="muted">Aguardando entrada...</p>}
+            </section>
+          </>
+        ) : (
+          <div className="panel" style={{ textAlign: 'center', padding: '50px' }}>
+            <h2>{activeTab.toUpperCase()}</h2>
+            <p className="muted">Feature in development.</p>
           </div>
-
-          {error && <div className="error">{error}</div>}
-        </form>
-
-        <section className="panel result">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2>Resultado</h2>
-            {diagnosis && (
-              <button onClick={exportToCSV} className="secondary" style={{ padding: '4px 12px', fontSize: '0.8rem', cursor: 'pointer' }}>
-                📥 Exportar CSV
-              </button>
-            )}
-          </div>
-          
-          {!diagnosis && <p className="muted">Nenhum diagnóstico gerado ainda.</p>}
-
-          {diagnosis && (
-            <div className="grid">
-              <div className="card">
-                <h3>Causa provável</h3>
-                {renderCauses(diagnosis.probable_causes)}
-              </div>
-
-              <div className="card">
-                <h3>Risco</h3>
-                <p><strong>Severidade:</strong> <span style={{ color: diagnosis.severity === 'critical' ? 'red' : 'inherit' }}>{diagnosis.severity ?? '—'}</span></p>
-                <p><strong>Confiança:</strong> {diagnosis.confidence ? (diagnosis.confidence * 100).toFixed(0) + '%' : '—'}</p>
-              </div>
-
-              <div className="card large">
-                <h3>Ações recomendadas</h3>
-                {diagnosis.recommended_actions && diagnosis.recommended_actions.length ? (
-                  <ol>
-                    {diagnosis.recommended_actions.map((a, i) => <li key={i}>{a}</li>)}
-                  </ol>
-                ) : <p className="muted">— não informado —</p>}
-              </div>
-            </div>
-          )}
-
-          {diagnosis && (
-            <>
-              <h4>Resumo</h4>
-              <p className="summary">{diagnosis.summary ?? '—'}</p>
-
-              <details>
-                <summary>Mostrar resposta bruta</summary>
-                <SafeJsonPreview data={diagnosis} />
-              </details>
-            </>
-          )}
-        </section>
+        )}
       </main>
-
-      <footer className="footer">Conectado a: <a href={API_URL} target="_blank" rel="noreferrer">{API_URL}</a></footer>
     </div>
   )
 }
