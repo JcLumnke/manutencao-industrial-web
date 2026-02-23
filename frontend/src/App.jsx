@@ -11,6 +11,7 @@ function SafeJsonPreview({ data }) {
 export default function App() {
   const [symptoms, setSymptoms] = useState('')
   const [machineId, setMachineId] = useState('')
+  const [equipmentName, setEquipmentName] = useState('') // New state for equipment name
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [diagnosis, setDiagnosis] = useState(null)
@@ -24,7 +25,12 @@ export default function App() {
       const res = await fetch(`${API_URL}/diagnose`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symptoms, machine_id: machineId || undefined })
+        // Added equipment_name to the payload
+        body: JSON.stringify({ 
+          symptoms, 
+          equipment_name: equipmentName || 'Not specified',
+          machine_id: machineId || undefined 
+        })
       })
       if (!res.ok) {
         const text = await res.text()
@@ -41,14 +47,66 @@ export default function App() {
     }
   }
 
+  // Function to export diagnosis to CSV
+  function exportToCSV() {
+    if (!diagnosis) return;
+    
+    const rows = [
+      ["Field", "Value"],
+      ["Equipment", equipmentName || "N/A"],
+      ["Machine ID", machineId || "N/A"],
+      ["Summary", diagnosis.summary || ""],
+      ["Severity", diagnosis.severity || ""],
+      ["Confidence", diagnosis.confidence || ""],
+      ["---", "---"],
+      ["Probable Causes", "Likelihood"]
+    ];
+
+    if (diagnosis.probable_causes) {
+      diagnosis.probable_causes.forEach(c => {
+        rows.push([c.cause || c.name || c, `${c.likelihood || 0}%`]);
+      });
+    }
+
+    const csvContent = "data:text/csv;charset=utf-8," 
+      + rows.map(e => e.join(",")).join("\n");
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `report_${equipmentName || 'machine'}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
   function renderCauses(list) {
     if (!list || !list.length) return <em>— não informado —</em>
     return (
-      <ul>
-        {list.map((c, i) => (
-          <li key={i}>{c.cause ?? c.name ?? c} {c.likelihood ? `(${c.likelihood}%)` : ''}</li>
-        ))}
-      </ul>
+      <div className="causes-list">
+        {list.map((c, i) => {
+          const name = c.cause ?? c.name ?? c;
+          const pct = c.likelihood ?? 0;
+          return (
+            <div key={i} style={{ marginBottom: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                <span>{name}</span>
+                <span>{pct}%</span>
+              </div>
+              {/* Visual progress bar for likelihood */}
+              <div style={{ background: '#eee', borderRadius: '4px', height: '8px', marginTop: '4px' }}>
+                <div style={{ 
+                  background: pct > 70 ? '#ff4d4f' : '#1890ff', 
+                  width: `${pct}%`, 
+                  height: '100%', 
+                  borderRadius: '4px',
+                  transition: 'width 1s ease-in-out'
+                }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
     )
   }
 
@@ -61,6 +119,9 @@ export default function App() {
 
       <main className="container">
         <form className="panel form" onSubmit={handleSubmit}>
+          <label>Equipment Name (equipamento)</label>
+          <input value={equipmentName} onChange={(e)=>setEquipmentName(e.target.value)} placeholder="Ex: Motor Principal, Prensa Hidráulica..." />
+
           <label>Symptoms (sintomas)</label>
           <textarea value={symptoms} onChange={(e)=>setSymptoms(e.target.value)} placeholder="Descreva os sintomas da máquina..." required rows={8} />
 
@@ -75,7 +136,15 @@ export default function App() {
         </form>
 
         <section className="panel result">
-          <h2>Resultado</h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h2>Resultado</h2>
+            {diagnosis && (
+              <button onClick={exportToCSV} className="secondary" style={{ padding: '4px 12px', fontSize: '0.8rem', cursor: 'pointer' }}>
+                📥 Exportar CSV
+              </button>
+            )}
+          </div>
+          
           {!diagnosis && <p className="muted">Nenhum diagnóstico gerado ainda.</p>}
 
           {diagnosis && (
@@ -87,8 +156,8 @@ export default function App() {
 
               <div className="card">
                 <h3>Risco</h3>
-                <p><strong>Severidade:</strong> {diagnosis.severity ?? '—'}</p>
-                <p><strong>Confiança:</strong> {diagnosis.confidence ?? '—'}</p>
+                <p><strong>Severidade:</strong> <span style={{ color: diagnosis.severity === 'critical' ? 'red' : 'inherit' }}>{diagnosis.severity ?? '—'}</span></p>
+                <p><strong>Confiança:</strong> {diagnosis.confidence ? (diagnosis.confidence * 100).toFixed(0) + '%' : '—'}</p>
               </div>
 
               <div className="card large">
