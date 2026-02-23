@@ -15,6 +15,12 @@ try:
 except Exception:
     genai = None
 
+# Optionally import GAPIC v1 client to force stable v1 behavior
+try:
+    from google.ai import generativelanguage_v1 as gapic
+except Exception:
+    gapic = None
+
 # Try to configure genai and prefer the stable v1 API when possible.
 if genai is not None:
     # Print library version for SquareCloud logs (best-effort)
@@ -31,6 +37,7 @@ if genai is not None:
         except Exception:
             genai_version = "unknown"
     print(f"GENAI LIB: google-generativeai version={genai_version}")
+    print(f"GAPIC LIB: {'present' if gapic is not None else 'missing'}")
 
     # Prefer configuring api_base to v1 if the configure function accepts it.
     try:
@@ -50,7 +57,7 @@ if genai is not None:
         print(f"genai.configure failed: {e}")
 
     # Best-effort: set common attributes that may force v1 endpoints
-    for attr, val in (("api_version", "v1"), ("api_base", "https://generative.googleapis.com/v1")):
+            for attr, val in (("api_version", "v1"), ("api_base", "https://generative.googleapis.com/v1")):
         try:
             if hasattr(genai, attr):
                 setattr(genai, attr, val)
@@ -233,9 +240,21 @@ async def diagnose(req: DiagnoseRequest):
             # then fall back to gemini-pro if the first is not available.
             raw = None
             last_exc = None
-            for model_name in ("gemini-1.5-flash", "gemini-pro"):
+            for model_name in ("gemini-pro", "gemini-1.5-flash"):
                 try:
-                    model = genai.GenerativeModel(model_name)
+                    # Try to force using v1 when creating the GenerativeModel
+                    try:
+                        model = genai.GenerativeModel(model_name, api_version="v1")
+                    except TypeError:
+                        model = genai.GenerativeModel(model_name)
+                        try:
+                            if hasattr(model, "api_version"):
+                                setattr(model, "api_version", "v1")
+                            elif hasattr(model, "version"):
+                                setattr(model, "version", "v1")
+                        except Exception:
+                            pass
+
                     response = model.generate_content(prompt)
                     # Prefer .text but fall back to extractor if needed
                     text = getattr(response, "text", None)
@@ -249,6 +268,23 @@ async def diagnose(req: DiagnoseRequest):
                     traceback.print_exc()
                     last_exc = e
             if raw is None:
+                # If model calls failed, try listing models allowed for this key (best-effort)
+                try:
+                    if genai is not None and hasattr(genai, "list_models"):
+                        try:
+                            models = genai.list_models()
+                            names = []
+                            for m in models:
+                                try:
+                                    names.append(m.name)
+                                except Exception:
+                                    names.append(str(m))
+                            print("Available models via genai.list_models():", names)
+                        except Exception as le:
+                            print("Could not list models via genai.list_models():", le)
+                except Exception:
+                    pass
+
                 # Surface the last exception back to the client/logs
                 if last_exc is not None:
                     raise HTTPException(status_code=500, detail=f"ERRO: {type(last_exc).__name__}: {str(last_exc)}")
