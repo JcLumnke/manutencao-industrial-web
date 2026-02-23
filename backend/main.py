@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import traceback
 from typing import Optional, Dict, Any
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,10 +12,8 @@ logging.basicConfig(level=logging.INFO)
 # Use only google.generativeai as requested
 try:
     import google.generativeai as genai
-    genai_name = "google.generativeai"
 except Exception:
     genai = None
-    genai_name = None
 
 # Explicitly configure genai with GEMINI_API_KEY (will raise KeyError if missing)
 try:
@@ -134,8 +133,35 @@ def _extract_text_from_resp(resp: Any) -> str:
         return ""
 
 
-def call_gemini(prompt: str) -> str:
-    # Local test mode returns canned JSON
+# The previous flexible `call_gemini` adapter has been removed to simplify
+# integration. The `/diagnose` endpoint will directly instantiate the
+# GenerativeModel and call `generate_content(...)` as requested.
+
+
+def extract_json_from_text(text: str):
+    try:
+        return json.loads(text)
+    except Exception:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            candidate = text[start:end+1]
+            try:
+                return json.loads(candidate)
+            except Exception:
+                pass
+    raise ValueError("Não foi possível extrair JSON da resposta do modelo.")
+
+
+@app.get("/")
+async def root():
+    return {"status": "ok"}
+
+
+@app.post("/diagnose", response_model=DiagnoseResponse)
+async def diagnose(req: DiagnoseRequest):
+    prompt = build_prompt(req)
+    # Local test mode returns canned JSON (keeps previous sample for offline testing)
     if os.getenv("GEMINI_TEST_MODE") == "1":
         sample = {
             "summary": "Vibração excessiva no eixo e aumento de temperatura do motor",
@@ -164,98 +190,28 @@ def call_gemini(prompt: str) -> str:
             "category": "mechanical",
             "maintenance_priority": 2,
         }
-        return json.dumps(sample, ensure_ascii=False)
+        raw = json.dumps(sample, ensure_ascii=False)
+    else:
+        try:
+            if genai is None:
+                raise RuntimeError("Nenhuma biblioteca GenAI disponível. Instale 'google-generativeai'.")
+            if "GEMINI_API_KEY" not in os.environ:
+                raise RuntimeError("Variável de ambiente GEMINI_API_KEY não definida.")
 
-    if genai is None:
-        raise RuntimeError("Nenhuma biblioteca GenAI disponível. Instale 'google-generativeai'.")
+            # Use the explicit GenerativeModel as requested
+            model = genai.GenerativeModel("gemini-1.5-flash")
+            response = model.generate_content(prompt)
+            # Prefer .text but fall back to extractor if needed
+            text = getattr(response, "text", None)
+            if not text:
+                text = _extract_text_from_resp(response)
+            raw = text if isinstance(text, str) else json.dumps(text, ensure_ascii=False)
+        except Exception as e:
+            print(f'ERRO REAL: {e}')
+            traceback.print_exc()
+            # Ensure frontend receives meaningful error detail
+            raise HTTPException(status_code=500, detail=f"ERRO: {type(e).__name__}: {str(e)}")
 
-    if "GEMINI_API_KEY" not in os.environ:
-        raise RuntimeError("Variável de ambiente GEMINI_API_KEY não definida.")
-
-    # Force a single model to avoid 404s
-    model_name = "gemini-1.5-flash"
-
-    errors = []
-
-    # Try chat completions (common for google-generativeai)
-    try:
-        if hasattr(genai, "chat") and hasattr(genai.chat, "completions"):
-            resp = genai.chat.completions.create(model=model_name, messages=[{"role": "user", "content": prompt}])
-            text = _extract_text_from_resp(resp)
-            if text:
-                return text
-    except Exception as e:
-        logging.exception("Error calling chat.completions.create: %s", str(e))
-        print(str(e))
-        errors.append(f"chat.completions: {type(e).__name__}: {str(e)}")
-
-    # Try text.generate
-    try:
-        if hasattr(genai, "text") and hasattr(genai.text, "generate"):
-            resp = genai.text.generate(model=model_name, prompt=prompt)
-            text = _extract_text_from_resp(resp)
-            if text:
-                return text
-    except Exception as e:
-        logging.exception("Error calling text.generate: %s", str(e))
-        print(str(e))
-        errors.append(f"text.generate: {type(e).__name__}: {str(e)}")
-
-    # Try generate_text
-    try:
-        if hasattr(genai, "generate_text"):
-            resp = genai.generate_text(model=model_name, prompt=prompt)
-            text = _extract_text_from_resp(resp)
-            if text:
-                return text
-    except Exception as e:
-        logging.exception("Error calling generate_text: %s", str(e))
-        print(str(e))
-        errors.append(f"generate_text: {type(e).__name__}: {str(e)}")
-
-    # Fallback: genai.generate
-    try:
-        if hasattr(genai, "generate"):
-            resp = genai.generate(model=model_name, prompt=prompt)
-            text = _extract_text_from_resp(resp)
-            if text:
-                return text
-    except Exception as e:
-        logging.exception("Error calling generate: %s", str(e))
-        print(str(e))
-        errors.append(f"generate: {type(e).__name__}: {str(e)}")
-
-    logging.error("All Gemini call methods failed: %s", errors)
-    raise RuntimeError("Erro ao chamar API Gemini. Detalhes: " + " | ".join(errors))
-
-
-def extract_json_from_text(text: str):
-    try:
-        return json.loads(text)
-    except Exception:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            candidate = text[start:end+1]
-            try:
-                return json.loads(candidate)
-            except Exception:
-                pass
-    raise ValueError("Não foi possível extrair JSON da resposta do modelo.")
-
-
-@app.get("/")
-async def root():
-    return {"status": "ok"}
-
-
-@app.post("/diagnose", response_model=DiagnoseResponse)
-async def diagnose(req: DiagnoseRequest):
-    prompt = build_prompt(req)
-    try:
-        raw = call_gemini(prompt)
-    except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e))
     try:
         parsed = extract_json_from_text(raw)
     except ValueError:
