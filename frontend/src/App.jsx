@@ -1,10 +1,8 @@
 import React, { useState } from 'react'
 
-// Backend URL from environment or fallback
 const API_URL = import.meta.env.VITE_API_URL || 'https://manutencao-industrial-julio.squareweb.app'
 
 export default function App() {
-  // Tabs: Diagnostico (Functional), Historico (View), Dashboard (Charts)
   const [activeTab, setActiveTab] = useState('diagnostico')
   const [symptoms, setSymptoms] = useState('')
   const [machineId, setMachineId] = useState('')
@@ -13,7 +11,6 @@ export default function App() {
   const [error, setError] = useState('')
   const [diagnosis, setDiagnosis] = useState(null)
 
-  // Submits the new diagnosis request to the Gemini API
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
@@ -25,11 +22,11 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           symptoms, 
-          equipment_name: equipmentName || 'Industrial Machine',
+          equipment_name: equipmentName || 'Machine',
           machine_id: machineId || undefined 
         })
       })
-      if (!res.ok) throw new Error(`API Status: ${res.status}`)
+      if (!res.ok) throw new Error(`Status ${res.status}`)
       const json = await res.json()
       setDiagnosis(json.diagnosis || json)
     } catch (err) {
@@ -39,23 +36,22 @@ export default function App() {
     }
   }
 
-  // Renders the Pizza Chart for confidence and severity
-  function renderRiskGauge(severity, confidence) {
-    const pct = Math.round((confidence || 0) * 100);
-    const gaugeColor = severity === 'critical' ? '#ff4d4f' : '#faad14';
+  function renderSeverityChart(severity, confidence) {
+    const confPct = Math.round((confidence || 0) * 100);
+    const color = severity === 'critical' ? '#ff4d4f' : '#faad14';
     return (
-      <div className="gauge-container" style={{ textAlign: 'center' }}>
+      <div style={{ textAlign: 'center', marginTop: '20px' }}>
         <div style={{
-          width: '130px', height: '130px', borderRadius: '50%',
-          background: `conic-gradient(${gaugeColor} ${pct}%, #f0f0f0 0)`,
+          width: '120px', height: '120px', borderRadius: '50%',
+          background: `conic-gradient(${color} ${confPct}%, #eee 0)`,
           display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto'
         }}>
-          <div style={{ width: '100px', height: '100px', background: '#fff', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 0 10px rgba(0,0,0,0.1)' }}>
-            <span style={{ fontSize: '22px', fontWeight: 'bold' }}>{pct}%</span>
-            <small style={{ fontSize: '11px', color: '#888', textTransform: 'uppercase' }}>{severity}</small>
+          <div style={{ width: '90px', height: '90px', background: 'white', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontSize: '20px', fontWeight: 'bold' }}>{confPct}%</span>
+            <small style={{ fontSize: '10px', color: '#666' }}>{severity}</small>
           </div>
         </div>
-        <p style={{ marginTop: '12px', fontWeight: '600', color: '#444' }}>Risk & Confidence</p>
+        <p style={{ marginTop: '10px', fontSize: '12px', fontWeight: 'bold' }}>Risk & Confidence</p>
       </div>
     );
   }
@@ -64,87 +60,81 @@ export default function App() {
     <div className="app">
       <header className="hero">
         <h1>Diagnóstico de Manutenção</h1>
-        <p className="subtitle">AI-Powered Industrial Failure Analysis</p>
+        <p>AI-Powered Industrial Failure Analysis</p>
       </header>
 
-      {/* Main Navigation - Removed "Novo Registro" as requested */}
-      <nav className="tabs-nav" style={{ display: 'flex', justifyContent: 'center', gap: '30px', background: '#fff', borderBottom: '1px solid #eee' }}>
-        {['diagnostico', 'historico', 'dashboard'].map(t => (
+      <nav className="tabs" style={{ display: 'flex', justifyContent: 'center', gap: '20px', background: '#fff', borderBottom: '1px solid #ddd' }}>
+        {['diagnostico', 'historico', 'dashboard'].map(tab => (
           <button 
-            key={t} 
-            onClick={() => setActiveTab(t)}
+            key={tab} 
+            onClick={() => setActiveTab(tab)}
             style={{ 
-              padding: '15px 25px', border: 'none', background: 'none', cursor: 'pointer',
-              borderBottom: activeTab === t ? '3px solid #004a8c' : '3px solid transparent',
-              color: activeTab === t ? '#004a8c' : '#666',
-              fontWeight: activeTab === t ? '700' : '400',
-              textTransform: 'uppercase', letterSpacing: '1px'
+              padding: '15px 30px', border: 'none', background: 'none', cursor: 'pointer',
+              borderBottom: activeTab === tab ? '3px solid #004a8c' : 'none',
+              fontWeight: activeTab === tab ? 'bold' : 'normal',
+              textTransform: 'uppercase', color: activeTab === tab ? '#004a8c' : '#666'
             }}
           >
-            {t}
+            {tab}
           </button>
         ))}
       </nav>
 
-      <main className="main-content" style={{ padding: '30px 10%' }}>
-        {activeTab === 'diagnostico' && (
-          <div className="diagnose-view" style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '30px' }}>
-            {/* Input Form */}
-            <form className="panel input-panel" onSubmit={handleSubmit}>
-              <div className="field">
-                <label>Equipment Name</label>
-                <input value={equipmentName} onChange={(e)=>setEquipmentName(e.target.value)} placeholder="e.g. Prensa Hidraulica" />
+      <main className="container">
+        {activeTab === 'diagnostico' ? (
+          <div className="grid-main" style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '30px', marginTop: '20px' }}>
+            <form className="panel form" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Equipment Name</label>
+                <input style={{ width: '100%', padding: '10px' }} value={equipmentName} onChange={(e)=>setEquipmentName(e.target.value)} placeholder="e.g. Prensa Hidraulica" />
               </div>
-              <div className="field">
-                <label>Symptoms</label>
-                <textarea value={symptoms} onChange={(e)=>setSymptoms(e.target.value)} placeholder="Describe machine behavior..." required rows={6} />
+
+              <div>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Symptoms</label>
+                <textarea style={{ width: '100%', padding: '10px' }} value={symptoms} onChange={(e)=>setSymptoms(e.target.value)} placeholder="Describe machine behavior..." required rows={6} />
               </div>
-              <div className="field">
-                <label>Machine ID (Optional)</label>
-                <input value={machineId} onChange={(e)=>setMachineId(e.target.value)} placeholder="e.g. 45" />
+
+              <div>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Machine ID (Optional)</label>
+                <input style={{ width: '100%', padding: '10px' }} value={machineId} onChange={(e)=>setMachineId(e.target.value)} placeholder="e.g. 45" />
               </div>
-              <button className="btn-primary" type="submit" disabled={loading}>
-                {loading ? 'Analyzing AI Models...' : 'Run Diagnosis'}
+
+              <button className="primary" type="submit" disabled={loading} style={{ padding: '12px', cursor: 'pointer' }}>
+                {loading ? 'Analyzing...' : 'Run Diagnosis'}
               </button>
             </form>
 
-            {/* Result Display */}
-            <section className="panel result-panel">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <h2>Results <span style={{ color: '#1890ff', fontSize: '16px' }}>for "{equipmentName || 'System'}"</span></h2>
-              </div>
-
+            <section className="panel result">
+              <h2>Results <span style={{ color: '#1890ff', fontSize: '18px' }}>for "{equipmentName || 'System'}"</span></h2>
+              
               {diagnosis ? (
-                <div className="results-grid">
-                  <div className="res-card">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '20px' }}>
+                  <div className="card">
                     <h3>Probable Causes</h3>
                     {diagnosis.probable_causes?.map((c, i) => (
-                      <div key={i} className="bar-group" style={{ marginBottom: '15px' }}>
-                        <div className="bar-label" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                      <div key={i} style={{ marginBottom: '15px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
                           <span>{c.cause}</span>
                           <span style={{ fontWeight: 'bold' }}>{c.likelihood}%</span>
                         </div>
-                        <div className="bar-bg" style={{ background: '#f0f0f0', height: '10px', borderRadius: '5px', marginTop: '6px' }}>
-                          <div className="bar-fill" style={{ background: 'linear-gradient(90deg, #1890ff, #69c0ff)', width: `${c.likelihood}%`, height: '100%', borderRadius: '50px' }} />
+                        <div style={{ background: '#eee', height: '10px', borderRadius: '5px', marginTop: '5px' }}>
+                          <div style={{ background: '#1890ff', width: `${c.likelihood}%`, height: '100%', borderRadius: '5px' }} />
                         </div>
                       </div>
                     ))}
                   </div>
-
-                  <div className="res-card risk-center">
-                    {renderRiskGauge(diagnosis.severity, diagnosis.confidence)}
+                  <div className="card">
+                    <h3>Assessment</h3>
+                    {renderSeverityChart(diagnosis.severity, diagnosis.confidence)}
                   </div>
                 </div>
-              ) : <div className="empty-state">Waiting for symptoms input to generate AI report.</div>}
+              ) : <p className="muted" style={{ marginTop: '20px' }}>Waiting for symptoms input to generate AI report.</p>}
             </section>
           </div>
-        )}
-
-        {/* Historico and Dashboard views remain as development placeholders */}
-        {(activeTab === 'historico' || activeTab === 'dashboard') && (
-          <div className="placeholder-view" style={{ textAlign: 'center', padding: '100px', background: '#fff', borderRadius: '12px' }}>
-             <h2 style={{ textTransform: 'uppercase', color: '#004a8c' }}>{activeTab}</h2>
-             <p style={{ color: '#999' }}>Database integration in progress (Module 3).</p>
+        ) : (
+          <div className="panel" style={{ textAlign: 'center', padding: '100px', marginTop: '20px' }}>
+            <h2 style={{ textTransform: 'uppercase' }}>{activeTab}</h2>
+            <p className="muted">Feature in development.</p>
           </div>
         )}
       </main>
