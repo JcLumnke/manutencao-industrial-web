@@ -57,7 +57,7 @@ if genai is not None:
         print(f"genai.configure failed: {e}")
 
     # Best-effort: set common attributes that may force v1 endpoints
-            for attr, val in (("api_version", "v1"), ("api_base", "https://generative.googleapis.com/v1")):
+    for attr, val in (("api_version", "v1"), ("api_base", "https://generative.googleapis.com/v1")):
         try:
             if hasattr(genai, attr):
                 setattr(genai, attr, val)
