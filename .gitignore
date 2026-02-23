@@ -56,7 +56,42 @@ cover/
 *.pot
 
 # Django stuff:
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment files
+.env
+*.env
+
+# Byte-compiled / build
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# IDEs and editors
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
 *.log
+
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
