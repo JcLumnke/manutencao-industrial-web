@@ -88,40 +88,43 @@ class DiagnoseResponse(BaseModel):
 
 
 def build_prompt(req: DiagnoseRequest) -> str:
-
+    # Optimized prompt for speed and technical precision without verbosity
     parts = [
         "### SYSTEM: SENIOR INDUSTRIAL MAINTENANCE SPECIALIST (SIMI) ###",
         f"EQUIPMENT: {req.equipment_name}",
-        "CONTEXT: You are a Senior Maintenance Engineer with 20+ years of experience in Mechatronics, Hydraulics, and Industrial Automation.",
-        "MISSION: Conduct a forensic analysis of the provided symptoms to identify root causes and complex failure modes.",
+        "CONTEXT: Senior Maintenance Engineer. Goal: Rapid, high-precision technical diagnosis.",
         
         "STRICT RESPONSE RULES:",
-        "1. In the 'summary' field, provide an exhaustive technical analysis (minimum 3 paragraphs).",
-        "2. Use precise technical terminology (e.g., cavitation, backlash, voltage spikes, fatigue wear, harmonic distortion).",
-        "3. In 'recommended_actions', include specific torques, multimeter readings, or nominal pressures where applicable.",
-        "4. Highlight any critical safety risks or LOTO (Lockout-Tagout) requirements in the summary.",
+        "1. In 'summary', provide a sharp, technical diagnosis using 3-5 concise bullet points.",
+        "2. Use specific terminology (e.g., cavitation, backlash, harmonic distortion) but stay objective.",
+        "3. Focus on 'Root Cause' and 'Immediate Impact'.",
         
-        "GENERATE A SINGLE JSON OBJECT WITH THESE EXACT FIELDS:",
-        "- summary: Deep and detailed technical diagnosis of the failure's mechanics/electronics.",
-        "- probable_causes: list of objects {cause: string, likelihood: number 0-100}",
-        "- severity: one of low|medium|high|critical",
-        "- recommended_actions: detailed step-by-step technical repair procedures.",
-        "- troubleshooting_steps: logical sequence of tests to isolate the faulty component.",
-        "- estimated_parts: specific components, part numbers (generic), and calibration tools.",
-        "- estimated_time_hours: approximate technical hours required.",
-        "- confidence: number between 0 and 1 representing diagnostic certainty.",
-        "- required_tools: list of specific tools needed for the task.",
-        "- recommended_tests: list of post-repair validation tests.",
-        "- logs_needed: list of specific telemetry or physical measurements to collect.",
-        "- component: most likely faulty component (e.g., motor, pump, PLC, sensor).",
+        "GENERATE A SINGLE JSON OBJECT WITH THESE FIELDS:",
+        "- summary: Technical diagnosis in concise bullet points.",
+        "- probable_causes: list of {cause: string, likelihood: 0-100}",
+        "- severity: low|medium|high|critical",
+        "- recommended_actions: specific repair steps (with values like torques/pressures if needed).",
+        "- troubleshooting_steps: logical sequence to isolate the fault.",
+        "- estimated_parts: specific components and tools.",
+        "- estimated_time_hours: approximate duration.",
+        "- confidence: 0 to 1.",
+        "- component: likely faulty part (e.g., motor, PLC, pump).",
         "- category: mechanical|electrical|software|sensor",
-        "- maintenance_priority: integer 1 (emergency) to 5 (preventive).",
+        "- maintenance_priority: 1-5.",
         
         "RETURN ONLY THE JSON OBJECT. NO PRE-TEXT OR POST-TEXT.",
         "SYMPTOMS DETECTED:",
         req.symptoms,
-        
     ]
+    
+    if req.machine_id:
+        parts.insert(1, f"MACHINE ID: {req.machine_id}")
+    if req.metadata:
+        parts.append("TELEMETRY DATA:")
+        parts.append(json.dumps(req.metadata, ensure_ascii=False))
+        
+    return "\n".join(parts)        
+    
     if req.machine_id:
         parts.insert(1, f"Machine ID: {req.machine_id}")
     if req.metadata:
