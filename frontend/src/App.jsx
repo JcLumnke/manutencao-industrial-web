@@ -10,7 +10,7 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [diagnosis, setDiagnosis] = useState(null)
   
-  // Logic to persist data in LocalStorage
+  // Persistence logic
   const [history, setHistory] = useState(() => {
     const saved = localStorage.getItem('maint_history');
     return saved ? JSON.parse(saved) : [];
@@ -38,7 +38,6 @@ export default function App() {
       
       setDiagnosis(newDiagnosis)
       
-      // Add to history dynamically
       const newEntry = {
         id: Date.now(),
         date: new Date().toLocaleDateString('pt-BR'),
@@ -47,7 +46,6 @@ export default function App() {
         summary: newDiagnosis.summary
       }
       setHistory([newEntry, ...history])
-      
     } catch (err) {
       console.error(err)
     } finally {
@@ -56,9 +54,14 @@ export default function App() {
   }
 
   return (
-    <div className="app" style={{ fontFamily: 'Segoe UI, Tahoma, Geneva, Verdana, sans-serif', backgroundColor: '#f4f7f6', minHeight: '100vh' }}>
-      <header style={{ backgroundColor: '#004a8c', color: 'white', padding: '20px', textAlign: 'center' }}>
-        <h1>Diagnóstico de Manutenção</h1>
+    <div className="app" style={{ fontFamily: 'Segoe UI, sans-serif', backgroundColor: '#f0f2f5', minHeight: '100vh' }}>
+      {/* Updated Header with Industrial Icon */}
+      <header style={{ backgroundColor: '#004a8c', color: 'white', padding: '30px 10%', display: 'flex', alignItems: 'center', gap: '20px' }}>
+        <div style={{ fontSize: '50px' }}>⚙️</div> 
+        <div style={{ textAlign: 'left' }}>
+          <h1 style={{ margin: 0 }}>Diagnóstico de Manutenção Industrial</h1>
+          <p style={{ margin: 0, opacity: 0.8 }}>AI-Powered Failure Analysis</p>
+        </div>
       </header>
 
       <nav style={{ display: 'flex', justifyContent: 'center', background: '#fff', borderBottom: '1px solid #ddd' }}>
@@ -70,55 +73,60 @@ export default function App() {
       <main style={{ maxWidth: '1200px', margin: '30px auto', padding: '0 20px' }}>
         {activeTab === 'diagnóstico' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '30px' }}>
-            <form onSubmit={handleSubmit} style={{ background: '#fff', padding: '25px', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }}>
-              <label style={{fontWeight:'bold'}}>Equipamento</label>
-              <input style={{ width: '100%', padding: '10px', margin: '10px 0 20px' }} value={equipmentName} onChange={e => setEquipmentName(e.target.value)} placeholder="Ex: Motor CA" />
+            <form onSubmit={handleSubmit} style={{ background: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
+              <label style={{fontWeight:'bold'}}>Nome do Equipamento</label>
+              <input style={{ width: '100%', padding: '12px', margin: '10px 0 20px', borderRadius: '6px', border: '1px solid #ccc' }} value={equipmentName} onChange={e => setEquipmentName(e.target.value)} placeholder="Ex: Torno CNC" />
               <label style={{fontWeight:'bold'}}>Sintomas</label>
-              <textarea style={{ width: '100%', padding: '10px', margin: '10px 0 20px' }} rows={6} value={symptoms} onChange={e => setSymptoms(e.target.value)} required />
-              <button style={{ width: '100%', padding: '15px', background: '#004a8c', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight:'bold' }}>{loading ? 'Consultando Gemini...' : 'GERAR DIAGNÓSTICO'}</button>
+              <textarea style={{ width: '100%', padding: '12px', margin: '10px 0 20px', borderRadius: '6px', border: '1px solid #ccc' }} rows={6} value={symptoms} onChange={e => setSymptoms(e.target.value)} required />
+              <button style={{ width: '100%', padding: '15px', background: '#004a8c', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight:'bold' }}>{loading ? 'ANALISANDO IA...' : 'GERAR DIAGNÓSTICO'}</button>
             </form>
 
-            <section style={{ background: '#fff', padding: '25px', borderRadius: '8px' }}>
-              <h2>Laudo Atual</h2>
+            <section style={{ background: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
+              <h2 style={{ borderBottom: '2px solid #eee', paddingBottom: '10px' }}>Resultado {equipmentName && <small style={{color:'#1890ff'}}>({equipmentName})</small>}</h2>
               {diagnosis ? (
-                <div>
-                  <p><strong>Severidade:</strong> {diagnosis.severity}</p>
+                <div style={{ marginTop: '20px' }}>
+                  <p><strong>Severidade:</strong> <span style={{ color: diagnosis.severity === 'critical' ? 'red' : 'orange' }}>{diagnosis.severity}</span></p>
                   <p><strong>Resumo:</strong> {diagnosis.summary}</p>
-                  <div style={{ marginTop: '20px', padding: '15px', background: '#e6f7ff', borderLeft: '5px solid #1890ff' }}>
-                    <strong>Ações:</strong> {diagnosis.recommended_actions?.join(', ')}
-                  </div>
                 </div>
-              ) : <p>Preencha os dados ao lado.</p>}
+              ) : <p style={{ color: '#999', marginTop: '20px' }}>Preencha os sintomas para análise.</p>}
             </section>
           </div>
         )}
 
         {activeTab === 'histórico' && (
-          <div style={{ background: '#fff', padding: '30px', borderRadius: '8px' }}>
-            <h2>Registros de Consultas</h2>
+          <div style={{ background: '#fff', padding: '30px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
+            <h2>Registros de Severidade</h2>
             <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
               <thead><tr style={{ textAlign: 'left', borderBottom: '2px solid #004a8c' }}><th>Data</th><th>Equipamento</th><th>Severidade</th></tr></thead>
-              <tbody>{history.map(h => (<tr key={h.id} style={{ borderBottom: '1px solid #eee' }}><td style={{ padding: '15px 0' }}>{h.date}</td><td>{h.equipment}</td><td>{h.severity}</td></tr>))}</tbody>
+              <tbody>
+                {history.length > 0 ? history.map(h => (
+                  <tr key={h.id} style={{ borderBottom: '1px solid #eee' }}>
+                    <td style={{ padding: '15px 0' }}>{h.date}</td>
+                    <td>{h.equipment}</td>
+                    <td style={{ color: h.severity === 'critical' ? 'red' : 'inherit' }}>{h.severity}</td>
+                  </tr>
+                )) : <tr><td colSpan="3" style={{ textAlign: 'center', padding: '30px', color: '#999' }}>Nenhum registro no histórico.</td></tr>}
+              </tbody>
             </table>
           </div>
         )}
 
         {activeTab === 'dashboard' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
-            <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', textAlign:'center' }}>
+            <div style={{ background: '#fff', padding: '25px', borderRadius: '12px', textAlign:'center', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
               <h3>Total de Consultas</h3>
-              <div style={{ fontSize: '48px', fontWeight: 'bold', color: '#004a8c' }}>{history.length}</div>
+              <div style={{ fontSize: '64px', fontWeight: 'bold', color: '#004a8c' }}>{history.length}</div>
             </div>
-            <div style={{ background: '#fff', padding: '20px', borderRadius: '8px' }}>
-              <h3>Distribuição de Severidade</h3>
-              {['critical', 'high', 'medium', 'low'].map(sev => {
-                const count = history.filter(h => h.severity === sev).length;
-                const pct = history.length > 0 ? (count / history.length) * 100 : 0;
+            <div style={{ background: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
+              <h3>Volume por Equipamento</h3>
+              {Array.from(new Set(history.map(h => h.equipment))).map(equip => {
+                const count = history.filter(h => h.equipment === equip).length;
+                const pct = (count / history.length) * 100;
                 return (
-                  <div key={sev} style={{ marginBottom: '10px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}><span>{sev}</span><span>{count}</span></div>
+                  <div key={equip} style={{ marginBottom: '15px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}><span>{equip}</span><span>{count}</span></div>
                     <div style={{ background: '#eee', height: '10px', borderRadius: '5px' }}>
-                      <div style={{ background: sev === 'critical' ? 'red' : '#1890ff', width: `${pct}%`, height: '100%', borderRadius: '5px' }} />
+                      <div style={{ background: '#004a8c', width: `${pct}%`, height: '100%', borderRadius: '5px' }} />
                     </div>
                   </div>
                 )
