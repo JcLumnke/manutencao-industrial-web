@@ -90,25 +90,37 @@ class DiagnoseResponse(BaseModel):
 def build_prompt(req: DiagnoseRequest) -> str:
 
     parts = [
-        f"EQUIPAMENTO: {req.equipment_name}",
-        "Você é um engenheiro de manutenção industrial experiente. Dados os sintomas abaixo, gere um único objeto JSON com os campos exatos:",
-        "- summary: resumo conciso do problema",
-        "- probable_causes: lista de objetos {cause: string, likelihood: number 0-100}",
-        "- severity: um de low|medium|high|critical",
-        "- recommended_actions: lista ordenada de passos",
-        "- troubleshooting_steps: lista passo-a-passo para diagnóstico",
-        "- estimated_parts: lista de peças/códigos necessários",
-        "- estimated_time_hours: número aproximado de horas",
-        "- confidence: número entre 0 e 1",
-        "- required_tools: lista de ferramentas",
-        "- recommended_tests: lista de testes a realizar",
-        "- logs_needed: lista de logs/medições para coletar",
-        "- component: componente provável (ex: motor, bomba, PLC, sensor)",
+        "### SYSTEM: SENIOR INDUSTRIAL MAINTENANCE SPECIALIST (SIMI) ###",
+        f"EQUIPMENT: {req.equipment_name}",
+        "CONTEXT: You are a Senior Maintenance Engineer with 20+ years of experience in Mechatronics, Hydraulics, and Industrial Automation.",
+        "MISSION: Conduct a forensic analysis of the provided symptoms to identify root causes and complex failure modes.",
+        
+        "STRICT RESPONSE RULES:",
+        "1. In the 'summary' field, provide an exhaustive technical analysis (minimum 3 paragraphs).",
+        "2. Use precise technical terminology (e.g., cavitation, backlash, voltage spikes, fatigue wear, harmonic distortion).",
+        "3. In 'recommended_actions', include specific torques, multimeter readings, or nominal pressures where applicable.",
+        "4. Highlight any critical safety risks or LOTO (Lockout-Tagout) requirements in the summary.",
+        
+        "GENERATE A SINGLE JSON OBJECT WITH THESE EXACT FIELDS:",
+        "- summary: Deep and detailed technical diagnosis of the failure's mechanics/electronics.",
+        "- probable_causes: list of objects {cause: string, likelihood: number 0-100}",
+        "- severity: one of low|medium|high|critical",
+        "- recommended_actions: detailed step-by-step technical repair procedures.",
+        "- troubleshooting_steps: logical sequence of tests to isolate the faulty component.",
+        "- estimated_parts: specific components, part numbers (generic), and calibration tools.",
+        "- estimated_time_hours: approximate technical hours required.",
+        "- confidence: number between 0 and 1 representing diagnostic certainty.",
+        "- required_tools: list of specific tools needed for the task.",
+        "- recommended_tests: list of post-repair validation tests.",
+        "- logs_needed: list of specific telemetry or physical measurements to collect.",
+        "- component: most likely faulty component (e.g., motor, pump, PLC, sensor).",
         "- category: mechanical|electrical|software|sensor",
-        "- maintenance_priority: inteiro 1-5",
-        "Retorne APENAS o JSON (sem texto explicativo adicional).",
-        "SYMPTOMS:",
+        "- maintenance_priority: integer 1 (emergency) to 5 (preventive).",
+        
+        "RETURN ONLY THE JSON OBJECT. NO PRE-TEXT OR POST-TEXT.",
+        "SYMPTOMS DETECTED:",
         req.symptoms,
+        
     ]
     if req.machine_id:
         parts.insert(1, f"Machine ID: {req.machine_id}")
