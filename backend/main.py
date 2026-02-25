@@ -2,7 +2,7 @@ import os
 import json
 import logging
 import traceback
-import time  
+import time  # <--- ESSENCIAL PARA O query_id FUNCIONAR
 from typing import Optional, Dict, Any
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -125,14 +125,6 @@ async def root():
 @app.post("/diagnose", response_model=DiagnoseResponse)
 async def diagnose(req: DiagnoseRequest):
     prompt = build_prompt(req)
-    
-    generation_config = {
-        "temperature": 0.2,     
-        "top_p": 0.8,            
-        "top_k": 40,            
-        "max_output_tokens": 1024 
-    }
-
     if os.getenv("GEMINI_TEST_MODE") == "1":
         return {"diagnosis": {"summary": "Modo teste"}, "raw_output": "{}"}
     
@@ -141,10 +133,7 @@ async def diagnose(req: DiagnoseRequest):
         last_exc = None
         for model_name in ("gemini-2.0-flash", "gemini-flash-latest"):
             try:
-                model = genai.GenerativeModel(
-                    model_name=model_name,
-                    generation_config=generation_config
-                )
+                model = genai.GenerativeModel(model_name)
                 response = model.generate_content(prompt)
                 text = getattr(response, "text", None) or _extract_text_from_resp(response)
                 raw = text if isinstance(text, str) else json.dumps(text)
