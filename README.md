@@ -83,7 +83,7 @@ MANUTENCAO-INDUSTRIAL-WEB/
 - **Gemini-Flash-Latest** (Fallback automático para resiliência de cota)
 
 ## ⚙️ Configuração do modelo
-- onfiguramos a Temperatura em 0.2 para garantir respostas técnicas determinísticas e precisas, essenciais para diagnósticos industriais, evitando a criatividade (alucinação) do modelo.
+- Configuramos a Temperatura em 0.2 para garantir respostas técnicas determinísticas e precisas, essenciais para diagnósticos industriais, evitando a criatividade (alucinação) do modelo.
 
 ## ⚙️ Justificativa de modelo pago vs.Local
 - Escolhi o Gemini 2.0 Flash pela sua capacidade superior de Structured Output (JSON) e latência reduzida comparada a modelos locais, o que é crítico para um ambiente de fábrica.
