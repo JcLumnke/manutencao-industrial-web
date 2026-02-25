@@ -65,6 +65,11 @@ MANUTENCAO-INDUSTRIAL-WEB/
 │   │   └── Configuração do bundler Vite
 │   └── .env.example        
 │       └── Variáveis de ambiente para conexão com API
+|── prompts               
+|    └── system_prompt.txt
+|
+|── tools               
+|    └── explicação.txt
 │
 └── README.md               
     └── Documentação técnica
