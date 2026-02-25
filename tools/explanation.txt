@@ -1,0 +1,4 @@
+"Para o MVP do SIMI, optamos por não utilizar Function Calling (ferramentas externas). A decisão foi baseada em:
+1. Redução de latência: chamadas extras aumentariam o tempo de resposta.
+2. Capacidade do Modelo: O Gemini 2.0 Flash possui treinamento robusto em manutenção industrial, sendo capaz de gerar planos de ação sem consultas externas.
+3. Confiabilidade: Evita erros de conexão com APIs de terceiros durante o diagnóstico crítico."

@@ -145,6 +145,11 @@ A IA retornava textos fora do padrão esperado.
 
 **O que Não Funcionou:** 
 - Durante os testes, o modelo ocasionalmente falhava em retornar um JSON válido se o input fosse muito curto; resolvemos isso adicionando Few-Shot examples no prompt para padronizar o output".
+**Decisões de Engenharia de Prompt:** 
+- Persona: Definida como Engenheiro Sênior para elevar o vocabulário técnico da LLM.
+- Restrição de Saída (Structured Output): Uso de JSON para garantir integração direta com o dashboard React.
+- Otimização de Latência: Transição de parágrafos longos para bullet points no summary para reduzir o tempo de geração e evitar timeouts na    Square Cloud.
+- Query ID: Inclusão de um timestamp dinâmico no backend para evitar que o modelo utilize contextos de consultas anteriores (cache de resposta)
 
 ---
 
