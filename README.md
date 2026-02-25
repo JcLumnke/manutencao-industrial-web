@@ -3,11 +3,13 @@
 
 O **SIMI** é uma plataforma avançada para otimização da manutenção industrial, utilizando **Inteligência Artificial Generativa** para transformar descrições técnicas de sintomas em **laudos estruturados em JSON**, permitindo tomada de decisão rápida, técnica e baseada em dados.
 
-Este projeto representa o esforço técnico final da **Pós-Graduação em Inteligência Artificial**, com foco na redução de *downtime* fabril por meio de diagnósticos instantâneos contendo:
+Este projeto representa o esforço técnico final da **Da disciplina Inteligência Artificial Generativa**, com foco na redução de *downtime* fabril por meio de diagnósticos instantâneos contendo:
 
 - 🔎 Causas prováveis  
 - ⚠️ Nível de severidade  
 - 🛠️ Plano de ação recomendado  
+
+O código do projeto foi integralmente gerado pelo Agente **Codex da Open IA** 
 
 ---
 
