@@ -169,7 +169,8 @@ O sistema entrega uma camada analítica estratégica com indicadores dinâmicos:
 Gráfico de pizza demonstrando:
 - Baixa
 - Média
-- Alta criticidade
+- Alta 
+- Critica
 
 ### 📊 Volume por Equipamento
 Gráfico de barras horizontais exibindo:
