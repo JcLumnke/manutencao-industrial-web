@@ -82,6 +82,12 @@ MANUTENCAO-INDUSTRIAL-WEB/
 - **Google Gemini 2.0 Flash** (Modelo principal)
 - **Gemini-Flash-Latest** (Fallback automático para resiliência de cota)
 
+## ⚙️ Configuração do modelo
+- onfiguramos a Temperatura em 0.2 para garantir respostas técnicas determinísticas e precisas, essenciais para diagnósticos industriais, evitando a criatividade (alucinação) do modelo.
+
+## ⚙️ Justificativa de modelo pago vs.Local
+- Escolhi o Gemini 2.0 Flash pela sua capacidade superior de Structured Output (JSON) e latência reduzida comparada a modelos locais, o que é crítico para um ambiente de fábrica.
+
 ## ⚙️ Backend
 - FastAPI
 - Uvicorn (execução assíncrona)
@@ -130,9 +136,15 @@ Evitar custo e latência de banco de dados externo nesta fase do projeto.
 A IA retornava textos fora do padrão esperado.
 
 **Solução:**  
-- Refinamento iterativo de prompt
+ Refinamento iterativo de prompt
 - Obrigatoriedade de retorno em JSON estruturado
 - Validação de severidade e campos obrigatórios
+
+**Estratégia de Prompting:**  
+- Utilizamos a técnica de Chain-of-Thought embutida no System Prompt para forçar o modelo a raciocinar sobre os sintomas antes de classificar a severidade, além de XML tags para delimitar contextos".
+
+**O que Não Funcionou:** 
+- Durante os testes, o modelo ocasionalmente falhava em retornar um JSON válido se o input fosse muito curto; resolvemos isso adicionando Few-Shot examples no prompt para padronizar o output".
 
 ---
 
