@@ -134,6 +134,12 @@ A IA retornava textos fora do padrão esperado.
 - Obrigatoriedade de retorno em JSON estruturado
 - Validação de severidade e campos obrigatórios
 
+**Decisões de Engenharia de Prompt:** 
+- Persona: Definida como Engenheiro Sênior para elevar o vocabulário técnico da LLM.
+- Restrição de Saída (Structured Output): Uso de JSON para garantir integração direta com o dashboard React.
+- Otimização de Latência: Transição de parágrafos longos para bullet points no summary para reduzir o tempo de geração e evitar timeouts na    Square Cloud.
+- Query ID: Inclusão de um timestamp dinâmico no backend para evitar que o modelo utilize contextos de consultas anteriores (cache de resposta)
+
 ---
 
 # 📊 5. Funcionalidades de BI e Dashboard
