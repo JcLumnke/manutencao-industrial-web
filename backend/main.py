@@ -2,7 +2,7 @@ import os
 import json
 import logging
 import traceback
-import time  # <--- ESSENCIAL PARA O query_id FUNCIONAR
+import time
 from typing import Optional, Dict, Any
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -53,7 +53,6 @@ class DiagnoseResponse(BaseModel):
     raw_output: str
 
 def build_prompt(req: DiagnoseRequest) -> str:
-    # Query ID garante que cada consulta seja única, evitando respostas repetidas
     query_id = int(time.time())
     
     parts = [
@@ -63,7 +62,7 @@ def build_prompt(req: DiagnoseRequest) -> str:
         "IDIOMA: RESPONDA EXCLUSIVAMENTE EM PORTUGUÊS DO BRASIL.",
         
         "REGRAS DE RESPOSTA:",
-        "1. No campo 'summary', forneça o diagnóstico técnico em 3 a 5 tópicos (bullet points) diretos.",
+        "1. No campo 'summary', forneça o diagnostic técnico em 3 a 5 tópicos (bullet points) diretos.",
         "2. Use terminologia técnica profissional (ex: cavitação, folga, surto de tensão).",
         "3. Escreva tudo em PORTUGUÊS. Não use inglês nos valores do JSON.",
         
@@ -126,6 +125,14 @@ async def root():
 @app.post("/diagnose", response_model=DiagnoseResponse)
 async def diagnose(req: DiagnoseRequest):
     prompt = build_prompt(req)
+    
+    generation_config = {
+        "temperature": 0.2,     
+        "top_p": 0.8,            
+        "top_k": 40,            
+        "max_output_tokens": 1024 
+    }
+
     if os.getenv("GEMINI_TEST_MODE") == "1":
         return {"diagnosis": {"summary": "Modo teste"}, "raw_output": "{}"}
     
@@ -134,7 +141,10 @@ async def diagnose(req: DiagnoseRequest):
         last_exc = None
         for model_name in ("gemini-2.0-flash", "gemini-flash-latest"):
             try:
-                model = genai.GenerativeModel(model_name)
+                model = genai.GenerativeModel(
+                    model_name=model_name,
+                    generation_config=generation_config
+                )
                 response = model.generate_content(prompt)
                 text = getattr(response, "text", None) or _extract_text_from_resp(response)
                 raw = text if isinstance(text, str) else json.dumps(text)
