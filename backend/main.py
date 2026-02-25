@@ -2,7 +2,7 @@ import os
 import json
 import logging
 import traceback
-import time
+import time  
 from typing import Optional, Dict, Any
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -62,7 +62,7 @@ def build_prompt(req: DiagnoseRequest) -> str:
         "IDIOMA: RESPONDA EXCLUSIVAMENTE EM PORTUGUÊS DO BRASIL.",
         
         "REGRAS DE RESPOSTA:",
-        "1. No campo 'summary', forneça o diagnostic técnico em 3 a 5 tópicos (bullet points) diretos.",
+        "1. No campo 'summary', forneça o diagnóstico técnico em 3 a 5 tópicos (bullet points) diretos.",
         "2. Use terminologia técnica profissional (ex: cavitação, folga, surto de tensão).",
         "3. Escreva tudo em PORTUGUÊS. Não use inglês nos valores do JSON.",
         
