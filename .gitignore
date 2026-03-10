@@ -67,6 +67,12 @@ __pycache__/
 venv/
 env/
 
+# Segredos e Certificados
+*.key
+*.pem
+*.crt
+
+
 # Environment files
 .env
 *.env
