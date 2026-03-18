@@ -136,7 +136,7 @@ async def diagnose(req: DiagnoseRequest):
     prompt = build_prompt(req)
     
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash") # Versão estável
+        model = genai.GenerativeModel("gemini-1.5-flash-latest") # Versão estável
         response = model.generate_content(prompt)
         raw_text = response.text
         
