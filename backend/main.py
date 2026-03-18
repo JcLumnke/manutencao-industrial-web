@@ -96,16 +96,40 @@ def salvar_no_banco(req: DiagnoseRequest, parsed_json: Dict[str, Any]):
         logging.error("❌ [DATABASE] Erro ao salvar na nuvem: %s", str(e))
 
 def build_prompt(req: DiagnoseRequest) -> str:
+    """Prompt de Engenheiro Sênior Densificado e Técnico."""
     query_id = int(time.time())
+    
     parts = [
-        f"### PROTOCOLO TÉCNICO: {query_id} ###",
-        f"EQUIPAMENTO: {req.equipment_name}",
-        "PERFIL: Engenheiro de Manutenção Sênior (Especialista em RCM e Confiabilidade).",
+        f"### PROTOCOLO TÉCNICO DE ANÁLISE: {query_id} ###",
+        f"ATIVO (EQUIPAMENTO): {req.equipment_name}",
+        "PERFIL: Engenheiro de Manutenção Sênior (Especialista em RCM e Análise de Falhas (RCA)).",
+        "CONTEXTO: Diagnóstico industrial de alta confiabilidade para tomada de decisão.",
         "IDIOMA: RESPONDA EXCLUSIVAMENTE EM PORTUGUÊS DO BRASIL.",
-        "GERE UM JSON PURO COM ESTES CAMPOS: summary, probable_causes, severity, recommended_actions, component, confidence.",
-        "NÃO use formatação Markdown. RETORNE APENAS O OBJETO.",
-        f"SINTOMAS: {req.symptoms}"
+        
+        "DIRETRIZES DE RESPOSTA (DENSIDADE TÉCNICA É OBRIGATÓRIA):",
+        "1. No campo 'summary', NÃO resuma apenas o que eu disse. Cite terminologia técnica aplicável ao ativo (ex: harmonic distortion, cavitation, harmonic distortion, desalinhamento paralelo/angular, folga mecânica). Cite possíveis NORMAS ISO aplicáveis se relevante (ex: ISO 10816 para vibração).",
+        "2. Identifique a 'severity' (baixa, média, alta, crítica) baseada no Risco de Parada de Produção e Risco à Segurança.",
+        "3. No campo 'recommended_actions', forneça PASSOS TÉCNICOS sequenciais de reparo e bloqueio (LOTO - Lockout/Tagout). Não dê passos genéricos.",
+        "4. No campo 'component', identifique o componente crítico afetado (ex: Rolamento 6205, Acoplamento, Estator, Bomba Hidráulica).",
+        
+        "GERE UM ÚNICO OBJETO JSON PURO COM ESTES CAMPOS EXATOS:",
+        "- summary: Diagnóstico técnico denso em bullet points.",
+        "- probable_causes: lista de {cause: string (citação técnica), likelihood: 0-100}",
+        "- severity: low|medium|high|critical",
+        "- recommended_actions: passos técnicos sequenciais de reparo.",
+        "- component: componente afetado.",
+        "- estimated_parts: peças e ferramentas que provavelmente serão necessárias.",
+        "- troubleshooting_steps: sequência lógica para isolar a falha.",
+        
+        "RETORNE APENAS O JSON, SEM FORMATAÇÃO MARKDOWN (NÃO use ```json).",
+        f"SINTOMAS RELATADOS PELO OPERADOR: {req.symptoms}"
     ]
+    
+    # Adicionando metadados se houver (para densificar mais)
+    if req.metadata:
+        parts.append("DADOS DE TELEMETRIA ADICIONAIS:")
+        parts.append(json.dumps(req.metadata, ensure_ascii=False))
+        
     return "\n".join(parts)
 
 def extract_json_from_text(text: str):
