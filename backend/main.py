@@ -14,9 +14,11 @@ logging.basicConfig(level=logging.INFO)
 
 # --- CONFIGURAÇÕES DO BANCO SQUARE CLOUD ---
 DB_URL = "postgresql://squarecloud:TZeCqGnuCOEeqAuJ7hfgPNKG@square-cloud-db-ba4b27ddd83a41578b0a9853e83c7116.squareweb.app:7116/squarecloud"
-SSL_ROOT = r"C:\Users\julio\Downloads\ca-certificate.crt"
-SSL_CERT = r"C:\Users\julio\Downloads\certificate.pem"
-SSL_KEY = r"C:\Users\julio\Downloads\private-key.key"
+
+# Ajuste automático de caminhos para os certificados
+SSL_ROOT = r"C:\Users\julio\Downloads\ca-certificate.crt" if os.name == 'nt' else "/application/ca-certificate.crt"
+SSL_CERT = r"C:\Users\julio\Downloads\certificate.pem" if os.name == 'nt' else "/application/certificate.pem"
+SSL_KEY = r"C:\Users\julio\Downloads\private-key.key" if os.name == 'nt' else "/application/private-key.key"
 
 # Configuração do Gemini
 try:
@@ -49,8 +51,20 @@ class DiagnoseResponse(BaseModel):
 
 # --- FUNÇÕES AUXILIARES ---
 
+def _extract_text_from_resp(resp: Any) -> str:
+    """Extrai texto de diferentes formatos de resposta do Gemini SDK."""
+    try:
+        if isinstance(resp, dict):
+            if "candidates" in resp and resp["candidates"]:
+                c = resp["candidates"][0]
+                return c.get("content", {}).get("parts", [{}])[0].get("text", "")
+        if hasattr(resp, "text"): return resp.text
+        if hasattr(resp, "candidates") and resp.candidates:
+            return resp.candidates[0].content.parts[0].text
+    except Exception: pass
+    return str(resp)
+
 def salvar_no_banco(req: DiagnoseRequest, parsed_json: Dict[str, Any]):
-    """Salva o diagnóstico técnico na Square Cloud com segurança SSL máxima."""
     try:
         conn = psycopg2.connect(
             DB_URL,
@@ -60,14 +74,11 @@ def salvar_no_banco(req: DiagnoseRequest, parsed_json: Dict[str, Any]):
             sslkey=SSL_KEY
         )
         cur = conn.cursor()
-        
         query = """
             INSERT INTO historico_manutencao 
             (equipamento, severidade, sintomas_usuario, laudo_tecnico, causas_provaveis, plano_acao, json_completo)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
-        
-        # Extraindo dados do JSON da IA para colunas específicas
         cur.execute(query, (
             req.equipment_name,
             parsed_json.get("severity", "medium"),
@@ -77,7 +88,6 @@ def salvar_no_banco(req: DiagnoseRequest, parsed_json: Dict[str, Any]):
             json.dumps(parsed_json.get("recommended_actions", [])),
             json.dumps(parsed_json)
         ))
-        
         conn.commit()
         cur.close()
         conn.close()
@@ -86,30 +96,14 @@ def salvar_no_banco(req: DiagnoseRequest, parsed_json: Dict[str, Any]):
         logging.error("❌ [DATABASE] Erro ao salvar na nuvem: %s", str(e))
 
 def build_prompt(req: DiagnoseRequest) -> str:
-    """Prompt Técnico de Engenheiro Sênior para Vitrine Profissional."""
     query_id = int(time.time())
-    
     parts = [
         f"### PROTOCOLO TÉCNICO: {query_id} ###",
         f"EQUIPAMENTO: {req.equipment_name}",
         "PERFIL: Engenheiro de Manutenção Sênior (Especialista em RCM e Confiabilidade).",
-        "CONTEXTO: Diagnóstico industrial de alta precisão.",
         "IDIOMA: RESPONDA EXCLUSIVAMENTE EM PORTUGUÊS DO BRASIL.",
-        
-        "DIRETRIZES DE RESPOSTA:",
-        "1. No campo 'summary', use terminologia técnica (ex: desalinhamento, cavitação, harmônicas).",
-        "2. Identifique a 'severity' com base no risco de parada de linha.",
-        "3. No campo 'recommended_actions', liste procedimentos técnicos e normas ISO/NBR se aplicável.",
-        
-        "GERE UM JSON PURO COM ESTES CAMPOS:",
-        "- summary: Diagnóstico denso em bullet points.",
-        "- probable_causes: lista de {cause: string, likelihood: 0-100}",
-        "- severity: low|medium|high|critical",
-        "- recommended_actions: sequência técnica de reparo.",
-        "- component: subsistema afetado (ex: Acoplamento, Rolamento, Estator).",
-        "- confidence: 0 a 1.",
-        
-        "REGRAS CRÍTICAS: NÃO use formatação Markdown. NÃO use ```json. RETORNE APENAS O OBJETO.",
+        "GERE UM JSON PURO COM ESTES CAMPOS: summary, probable_causes, severity, recommended_actions, component, confidence.",
+        "NÃO use formatação Markdown. RETORNE APENAS O OBJETO.",
         f"SINTOMAS: {req.symptoms}"
     ]
     return "\n".join(parts)
@@ -125,8 +119,6 @@ def extract_json_from_text(text: str):
             except Exception: pass
     raise ValueError("Falha na extração de dados técnicos da IA.")
 
-# --- ENDPOINTS ---
-
 @app.get("/")
 async def root():
     return {"status": "Sistema de Manutenção Online", "database": "Square Cloud Connected"}
@@ -134,20 +126,26 @@ async def root():
 @app.post("/diagnose", response_model=DiagnoseResponse)
 async def diagnose(req: DiagnoseRequest):
     prompt = build_prompt(req)
-    
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash-latest") # Versão estável
-        response = model.generate_content(prompt)
-        raw_text = response.text
+        raw = None
+        last_exc = None
+        for model_name in ("gemini-2.0-flash", "gemini-flash-latest"):
+            try:
+                logging.info(f"🤖 Tentando modelo: {model_name}")
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content(prompt)
+                text = getattr(response, "text", None) or _extract_text_from_resp(response)
+                raw = text if isinstance(text, str) else json.dumps(text)
+                break
+            except Exception as e:
+                last_exc = e
+                logging.warning(f"⚠️ Falha no modelo {model_name}: {e}")
+                continue
         
-        # 1. Converte a resposta em JSON
-        parsed = extract_json_from_text(raw_text)
-        
-        # 2. PERSISTÊNCIA NA NUVEM (O diferencial do seu projeto)
+        if raw is None: raise last_exc
+        parsed = extract_json_from_text(raw)
         salvar_no_banco(req, parsed)
-        
-        return {"diagnosis": parsed, "raw_output": raw_text}
-    
+        return {"diagnosis": parsed, "raw_output": raw}
     except Exception as e:
         logging.error("Erro no processamento: %s", traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
