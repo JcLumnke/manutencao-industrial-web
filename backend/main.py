@@ -147,6 +147,46 @@ async def diagnose(req: DiagnoseRequest):
     except Exception as e:
         logging.error("Erro: %s", traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
+@app.get("/history")
+async def get_history(usuario: Optional[str] = None):
+    """Busca o histórico no banco. Se passar usuário, filtra por ele."""
+    try:
+        # A mesma lógica de conexão segura que já criamos
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', delete=False) as ca_f, \
+             tempfile.NamedTemporaryFile(mode='w', delete=False) as cert_f, \
+             tempfile.NamedTemporaryFile(mode='w', delete=False) as key_f:
+            
+            ca_content = os.getenv("DB_CA_CERT")
+            cert_content = os.getenv("DB_CLIENT_CERT")
+            key_content = os.getenv("DB_CLIENT_KEY")
+
+            if ca_content and cert_content and key_content:
+                ca_f.write(ca_content); ca_f.flush()
+                cert_f.write(cert_content); cert_f.flush()
+                key_f.write(key_content); key_f.flush()
+                conn = psycopg2.connect(DB_URL, sslmode="verify-full", sslrootcert=ca_f.name, sslcert=cert_f.name, sslkey=key_f.name)
+            else:
+                conn = psycopg2.connect(DB_URL, sslmode="verify-full", sslrootcert=r"C:\Users\julio\Downloads\ca-certificate.crt", sslcert=r"C:\Users\julio\Downloads\certificate.pem", sslkey=r"C:\Users\julio\Downloads\private-key.key")
+
+            cur = conn.cursor()
+            if usuario:
+                cur.execute("SELECT id, equipamento, severidade, laudo_tecnico, criado_em, usuario, json_completo FROM historico_manutencao WHERE usuario = %s ORDER BY criado_em DESC", (usuario,))
+            else:
+                cur.execute("SELECT id, equipamento, severidade, laudo_tecnico, criado_em, usuario, json_completo FROM historico_manutencao ORDER BY criado_em DESC LIMIT 50")
+            
+            rows = cur.fetchall()
+            cur.close()
+            conn.close()
+            
+            return [{
+                "id": r[0], "equipment": r[1], "severity": r[2], 
+                "diagnosis": r[3], "date": r[4].isoformat(), 
+                "user": r[5], "full_data": r[6]
+            } for r in rows]
+    except Exception as e:
+        logging.error(f"Erro ao buscar histórico: {e}")
+        return []
 
 if __name__ == "__main__":
     import uvicorn
