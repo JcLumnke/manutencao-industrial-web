@@ -26,7 +26,8 @@ graph TD
     C -->|Fallback automático| E[Gemini-Flash-Latest]
     C -->|Resposta JSON estruturada| B
     B -->|Diagnóstico validado| A
-    A -->|Persistência local| D[LocalStorage do Navegador]
+    B -->|Persistência centralizada| F[Banco de Dados (SquareCloud)]
+    A -->|Cache local opcional| D[LocalStorage do Navegador]
 ```
 
 ---
@@ -77,6 +78,8 @@ MANUTENCAO-INDUSTRIAL-WEB/
     └── Documentação técnica
 ```
 
+Observação: o projeto agora persiste dados em uma instância de Banco de Dados hospedada na mesma conta/projeto do backend na SquareCloud. Há um script de utilitários para atualização/manutenção do esquema em `tools/atualizar_banco.py`.
+
 ---
 
 # 🛠️ 3. Stack Tecnológica
@@ -105,8 +108,8 @@ MANUTENCAO-INDUSTRIAL-WEB/
 - Vite (build rápido e dev server)
 
 ## ☁️ Hospedagem
-- Backend: SquareCloud
-- Frontend: Vercel
+- Backend + Banco de Dados: SquareCloud (Backend e instância de persistência hospedados no mesmo projeto/serviço da SquareCloud)
+- Frontend: Vercel (ou hospedagem estática de sua preferência)
 
 ---
 
@@ -127,13 +130,18 @@ Limite de requisições por minuto da API gratuita do Gemini.
 
 ## 💾 Persistência de Dados
 
-**Problema:**  
-Evitar custo e latência de banco de dados externo nesta fase do projeto.
+**Situação atual:**
+O projeto agora utiliza uma instância de Banco de Dados hospedada na SquareCloud para persistência centralizada dos laudos e históricos. A instância está ligada ao mesmo projeto de deploy do backend, reduzindo latência e simplificando o fluxo de deploy/gestão.
 
-**Solução:**  
-- Utilização de `LocalStorage`
-- Histórico de diagnósticos mantido no navegador
-- Gráficos persistem durante a sessão
+**Comportamento e arquitetura de persistência:**
+- Persistência central: dados dos diagnósticos são gravados na base remota (SquareCloud).
+- Cache local: o `LocalStorage` no navegador pode ser usado como cache/backup temporário, mas o estado canônico está no banco na nuvem.
+- Migrações/atualizações: existe o utilitário `tools/atualizar_banco.py` para tarefas de atualização do esquema e manutenção.
+
+**Benefícios:**
+- Histórico centralizado entre usuários e dispositivos
+- Maior confiabilidade e facilidade para análises e BI
+- Menor risco de perda de dados quando a sessão do navegador é encerrada
 
 ---
 
