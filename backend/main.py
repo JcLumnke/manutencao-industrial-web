@@ -156,7 +156,7 @@ async def get_history(usuario: Optional[str] = None):
 @app.post("/diagnose", response_model=DiagnoseResponse)
 async def diagnose(req: DiagnoseRequest):
     try:
-        model = genai.GenerativeModel("gemini-pro")
+        model = genai.GenerativeModel("gemini-1.5-flash-latest")
         prompt = f"Gere um laudo técnico para {req.equipment_name}. Sintomas: {req.symptoms}. Retorne apenas JSON."
         response = model.generate_content(prompt)
         raw = response.text.replace("```json", "").replace("```", "").strip()
