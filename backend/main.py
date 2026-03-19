@@ -2,7 +2,7 @@ import os
 import json
 import logging
 import traceback
-import time
+import tempfile
 import psycopg2
 from typing import Optional, Dict, Any
 from fastapi import FastAPI, HTTPException
@@ -18,7 +18,7 @@ DB_URL = "postgresql://squarecloud:TZeCqGnuCOEeqAuJ7hfgPNKG@square-cloud-db-ba4b
 # Configuração do Gemini
 try:
     import google.generativeai as genai
-    genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+    genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 except Exception as e:
     logging.error("Falha ao configurar Gemini: %s", str(e))
     genai = None
@@ -37,44 +37,70 @@ app.add_middleware(
 class DiagnoseRequest(BaseModel):
     symptoms: str = Field(..., description="Descrição dos sintomas")
     equipment_name: Optional[str] = "Equipamento Não Identificado"
-    usuario: Optional[str] = "Julio" # Campo para identificar o autor do laudo
+    usuario: Optional[str] = "Julio"
     machine_id: Optional[str] = None
 
 class DiagnoseResponse(BaseModel):
     diagnosis: Dict[str, Any]
     raw_output: str
 
-# --- FUNÇÕES AUXILIARES ---
+# --- FUNÇÃO DE CONEXÃO UNIVERSAL (SEGURA) ---
 
-def salvar_no_banco(req: DiagnoseRequest, parsed_json: Dict[str, Any]):
-    """Salva o diagnóstico na Square Cloud com adaptação de ambiente (Local vs Nuvem)."""
-    try:
-        # Detecta se está rodando no seu Windows (nt) ou na Square Cloud (posix/linux)
-        if os.name == 'nt':
-            # Configuração para o seu COMPUTADOR LOCAL (Downloads)
+def get_db_connection():
+    """Gerencia a conexão com o banco criando arquivos temporários para os certificados."""
+    # Recupera e limpa as variáveis de ambiente (remove aspas e espaços extras)
+    ca_content = os.getenv("DB_CA_CERT", "").strip().strip('"').strip("'")
+    cert_content = os.getenv("DB_CLIENT_CERT", "").strip().strip('"').strip("'")
+    key_content = os.getenv("DB_CLIENT_KEY", "").strip().strip('"').strip("'")
+
+    if ca_content and cert_content and key_content:
+        # AMBIENTE NUVEM (Square Cloud)
+        ca_f = tempfile.NamedTemporaryFile(mode='w', delete=False)
+        cert_f = tempfile.NamedTemporaryFile(mode='w', delete=False)
+        key_f = tempfile.NamedTemporaryFile(mode='w', delete=False)
+
+        try:
+            ca_f.write(ca_content); ca_f.flush()
+            cert_f.write(cert_content); cert_f.flush()
+            key_f.write(key_content); key_f.flush()
+
             conn = psycopg2.connect(
                 DB_URL,
                 sslmode="verify-full",
-                sslrootcert=r"C:\Users\julio\Downloads\ca-certificate.crt",
-                sslcert=r"C:\Users\julio\Downloads\certificate.pem",
-                sslkey=r"C:\Users\julio\Downloads\private-key.key"
+                sslrootcert=ca_f.name,
+                sslcert=cert_f.name,
+                sslkey=key_f.name
             )
-        else:
-            # Configuração para a SQUARE CLOUD (Conexão interna segura)
-            # 'require' criptografa a conexão sem exigir arquivos físicos que não existem na nuvem
-            conn = psycopg2.connect(
-                DB_URL,
-                sslmode="require"
-            )
+            # Guardamos os nomes para deletar depois no 'finally' do chamador
+            return conn, [ca_f.name, cert_f.name, key_f.name]
+        except Exception as e:
+            for f in [ca_f.name, cert_f.name, key_f.name]:
+                if os.path.exists(f): os.remove(f)
+            raise e
+    else:
+        # AMBIENTE LOCAL (Seu Windows)
+        conn = psycopg2.connect(
+            DB_URL,
+            sslmode="verify-full",
+            sslrootcert=r"C:\Users\julio\Downloads\ca-certificate.crt",
+            sslcert=r"C:\Users\julio\Downloads\certificate.pem",
+            sslkey=r"C:\Users\julio\Downloads\private-key.key"
+        )
+        return conn, []
 
+# --- FUNÇÕES DE LÓGICA ---
+
+def salvar_no_banco(req: DiagnoseRequest, parsed_json: Dict[str, Any]):
+    conn = None
+    tmp_files = []
+    try:
+        conn, tmp_files = get_db_connection()
         cur = conn.cursor()
-        
         query = """
             INSERT INTO historico_manutencao 
             (equipamento, severidade, sintomas_usuario, laudo_tecnico, causas_provaveis, plano_acao, json_completo, usuario)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """
-        
         cur.execute(query, (
             req.equipment_name,
             parsed_json.get("severity", "medium"),
@@ -85,43 +111,63 @@ def salvar_no_banco(req: DiagnoseRequest, parsed_json: Dict[str, Any]):
             json.dumps(parsed_json),
             req.usuario 
         ))
-        
         conn.commit()
         cur.close()
-        conn.close()
-        logging.info(f"🚀 [DATABASE] Registro do técnico {req.usuario} salvo com sucesso!")
+        logging.info(f"🚀 [DATABASE] Sucesso ao salvar registro de {req.usuario}")
     except Exception as e:
-        logging.error("❌ [DATABASE] Erro ao salvar: %s", str(e))
+        logging.error(f"❌ [DATABASE] Erro ao salvar: {e}")
+    finally:
+        if conn: conn.close()
+        for f in tmp_files:
+            if os.path.exists(f): os.remove(f)
+
+@app.get("/history")
+async def get_history(usuario: Optional[str] = None):
+    conn = None
+    tmp_files = []
+    try:
+        conn, tmp_files = get_db_connection()
+        cur = conn.cursor()
+        if usuario:
+            cur.execute("SELECT id, equipamento, severidade, laudo_tecnico, criado_em, usuario, json_completo FROM historico_manutencao WHERE usuario = %s ORDER BY criado_em DESC", (usuario,))
+        else:
+            cur.execute("SELECT id, equipamento, severidade, laudo_tecnico, criado_em, usuario, json_completo FROM historico_manutencao ORDER BY criado_em DESC LIMIT 50")
+        
+        rows = cur.fetchall()
+        cur.close()
+        return [{
+            "id": r[0], "equipment": r[1], "severity": r[2], 
+            "diagnosis": r[3], "date": r[4].isoformat(), 
+            "user": r[5], "full_data": r[6]
+        } for r in rows]
+    except Exception as e:
+        logging.error(f"❌ [HISTORY] Erro ao buscar: {e}")
+        return []
+    finally:
+        if conn: conn.close()
+        for f in tmp_files:
+            if os.path.exists(f): os.remove(f)
+
+# --- RESTO DO CÓDIGO (DIAGNOSE / PROMPT) ---
 
 def build_prompt(req: DiagnoseRequest) -> str:
-    """Prompt densificado para gerar laudos técnicos de nível A4."""
     return f"""
     Aja como um Engenheiro de Manutenção Sênior e Especialista em Confiabilidade (RCM).
     Gere um LAUDO TÉCNICO EXAUSTIVO para o ativo: {req.equipment_name}.
     Inspetor Responsável: {req.usuario}
-
-    DIRETRIZES DE DENSIDADE (PARA PREENCHER UMA PÁGINA):
-    1. O campo 'summary' deve ser um parecer técnico profundo (mínimo de 300 palavras). 
-       Explique a física da falha, mencione termos como ressonância, fadiga de material ou cavitação conforme o caso.
-    2. Em 'probable_causes', detalhe a causa raiz técnica (RCA) para cada item.
-    3. Em 'recommended_actions', liste passos detalhados incluindo ferramentas (ex: alinhador a laser, megômetro) e normas (ISO/ABNT).
-    4. Adicione campos de 'impacto_operacional' e 'seguranca_loto'.
-
     SINTOMAS: {req.symptoms}
 
-    RETORNE APENAS O OBJETO JSON (SEM MARKDOWN):
+    RETORNE APENAS JSON:
     {{
-      "summary": "Parecer técnico denso e detalhado...",
+      "summary": "Parecer técnico denso (mínimo 300 palavras)...",
       "severity": "critical|high|medium|low",
-      "probable_causes": [{{ "cause": "...", "detail": "explicação técnica", "likelihood": 90 }}],
-      "recommended_actions": ["passo 1: bloqueio LOTO", "passo 2: inspeção com ferramenta X"],
-      "impacto_operacional": "Descrição do risco de parada de planta",
-      "seguranca_loto": "Procedimento de segurança obrigatório",
-      "componente_foco": "Peça ou subsistema específico"
+      "probable_causes": [{{ "cause": "...", "detail": "...", "likelihood": 90 }}],
+      "recommended_actions": ["passo 1", "passo 2"],
+      "impacto_operacional": "...",
+      "seguranca_loto": "...",
+      "componente_foco": "..."
     }}
     """
-
-# --- ENDPOINTS ---
 
 @app.post("/diagnose", response_model=DiagnoseResponse)
 async def diagnose(req: DiagnoseRequest):
@@ -136,57 +182,14 @@ async def diagnose(req: DiagnoseRequest):
                 if raw: break
             except: continue
         
-        if not raw: raise Exception("IA não retornou dados.")
-
+        if not raw: raise Exception("IA sem resposta.")
         raw = raw.replace("```json", "").replace("```", "").strip()
         parsed = json.loads(raw)
-
         salvar_no_banco(req, parsed)
         return {"diagnosis": parsed, "raw_output": raw}
-    
     except Exception as e:
         logging.error("Erro: %s", traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
-@app.get("/history")
-async def get_history(usuario: Optional[str] = None):
-    """Busca o histórico no banco. Se passar usuário, filtra por ele."""
-    try:
-        # A mesma lógica de conexão segura que já criamos
-        import tempfile
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as ca_f, \
-             tempfile.NamedTemporaryFile(mode='w', delete=False) as cert_f, \
-             tempfile.NamedTemporaryFile(mode='w', delete=False) as key_f:
-            
-            ca_content = os.getenv("DB_CA_CERT")
-            cert_content = os.getenv("DB_CLIENT_CERT")
-            key_content = os.getenv("DB_CLIENT_KEY")
-
-            if ca_content and cert_content and key_content:
-                ca_f.write(ca_content); ca_f.flush()
-                cert_f.write(cert_content); cert_f.flush()
-                key_f.write(key_content); key_f.flush()
-                conn = psycopg2.connect(DB_URL, sslmode="verify-full", sslrootcert=ca_f.name, sslcert=cert_f.name, sslkey=key_f.name)
-            else:
-                conn = psycopg2.connect(DB_URL, sslmode="verify-full", sslrootcert=r"C:\Users\julio\Downloads\ca-certificate.crt", sslcert=r"C:\Users\julio\Downloads\certificate.pem", sslkey=r"C:\Users\julio\Downloads\private-key.key")
-
-            cur = conn.cursor()
-            if usuario:
-                cur.execute("SELECT id, equipamento, severidade, laudo_tecnico, criado_em, usuario, json_completo FROM historico_manutencao WHERE usuario = %s ORDER BY criado_em DESC", (usuario,))
-            else:
-                cur.execute("SELECT id, equipamento, severidade, laudo_tecnico, criado_em, usuario, json_completo FROM historico_manutencao ORDER BY criado_em DESC LIMIT 50")
-            
-            rows = cur.fetchall()
-            cur.close()
-            conn.close()
-            
-            return [{
-                "id": r[0], "equipment": r[1], "severity": r[2], 
-                "diagnosis": r[3], "date": r[4].isoformat(), 
-                "user": r[5], "full_data": r[6]
-            } for r in rows]
-    except Exception as e:
-        logging.error(f"Erro ao buscar histórico: {e}")
-        return []
 
 if __name__ == "__main__":
     import uvicorn
