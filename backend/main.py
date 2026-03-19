@@ -3,6 +3,7 @@ import json
 import logging
 import traceback
 import tempfile
+import base64
 import psycopg2
 from typing import Optional, Dict, Any
 from fastapi import FastAPI, HTTPException
@@ -12,7 +13,6 @@ from pydantic import BaseModel, Field
 # Configurações de Log
 logging.basicConfig(level=logging.INFO)
 
-# --- CONFIGURAÇÕES DO BANCO SQUARE CLOUD ---
 DB_URL = "postgresql://squarecloud:TZeCqGnuCOEeqAuJ7hfgPNKG@square-cloud-db-ba4b27ddd83a41578b0a9853e83c7116.squareweb.app:7116/squarecloud"
 
 # Configuração do Gemini
@@ -33,44 +33,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- MODELOS DE DADOS ---
 class DiagnoseRequest(BaseModel):
-    symptoms: str = Field(..., description="Descrição dos sintomas")
-    equipment_name: Optional[str] = "Equipamento Não Identificado"
+    symptoms: str
+    equipment_name: Optional[str] = "Equipamento"
     usuario: Optional[str] = "Julio"
-    machine_id: Optional[str] = None
 
 class DiagnoseResponse(BaseModel):
     diagnosis: Dict[str, Any]
     raw_output: str
 
-# --- FUNÇÃO DE CONEXÃO UNIVERSAL (SEGURA) ---
+# --- FUNÇÃO DE CONEXÃO PROFISSIONAL (DECODIFICA BASE64) ---
 
 def get_db_connection():
-    """Gerencia a conexão com o banco tratando as aspas e quebras de linha da Square Cloud."""
-    
-    # Busca as variáveis e remove as aspas que a Square Cloud exige no painel
-    ca_raw = os.getenv("DB_CA_CERT", "")
-    cert_raw = os.getenv("DB_CLIENT_CERT", "")
-    key_raw = os.getenv("DB_CLIENT_KEY", "")
+    """Lê o texto Base64 da Square Cloud e reconstrói os arquivos de certificado."""
+    # Pega as tripas de letras que você colou no site
+    ca_b64 = os.getenv("DB_CA_CERT", "").strip().strip('"')
+    cert_b64 = os.getenv("DB_CLIENT_CERT", "").strip().strip('"')
+    key_b64 = os.getenv("DB_CLIENT_KEY", "").strip().strip('"')
 
-    # Limpeza profunda: remove aspas, espaços e garante que as quebras de linha sejam respeitadas
-    ca_content = ca_raw.strip().strip('"').strip("'").replace('\\n', '\n')
-    cert_content = cert_raw.strip().strip('"').strip("'").replace('\\n', '\n')
-    key_content = key_raw.strip().strip('"').strip("'").replace('\\n', '\n')
-
-    # Se estivermos no Linux (Square Cloud) OU se as variáveis existirem
-    if os.name != 'nt' or (ca_content and cert_content):
-        logging.info("🔧 Configurando conexão segura via arquivos temporários na Nuvem...")
-        
-        ca_f = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.crt')
-        cert_f = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.pem')
-        key_f = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.key')
+    # Se estiver na Square Cloud (onde as variáveis existem)
+    if ca_b64 and cert_b64 and key_b64:
+        logging.info("🔧 Decodificando certificados Base64 na Nuvem...")
+        # Criamos arquivos temporários binários ('wb')
+        ca_f = tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.crt')
+        cert_f = tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.pem')
+        key_f = tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.key')
 
         try:
-            ca_f.write(ca_content); ca_f.flush()
-            cert_f.write(cert_content); cert_f.flush()
-            key_f.write(key_content); key_f.flush()
+            # Transforma as letras de volta nos arquivos originais
+            ca_f.write(base64.b64decode(ca_b64)); ca_f.flush()
+            cert_f.write(base64.b64decode(cert_b64)); cert_f.flush()
+            key_f.write(base64.b64decode(key_b64)); key_f.flush()
 
             conn = psycopg2.connect(
                 DB_URL,
@@ -81,13 +74,12 @@ def get_db_connection():
             )
             return conn, [ca_f.name, cert_f.name, key_f.name]
         except Exception as e:
-            # Se falhar, limpa os arquivos para não deixar lixo
             for f in [ca_f.name, cert_f.name, key_f.name]:
                 if os.path.exists(f): os.remove(f)
             raise e
     else:
-        # APENAS se for Windows local e sem variáveis de ambiente
-        logging.info("💻 Conectando via caminhos locais do Windows...")
+        # Se você estiver rodando no seu computador (Local)
+        logging.info("💻 Usando caminhos locais do Windows...")
         conn = psycopg2.connect(
             DB_URL,
             sslmode="verify-full",
@@ -97,7 +89,7 @@ def get_db_connection():
         )
         return conn, []
 
-# --- FUNÇÕES DE LÓGICA ---
+# --- ROTAS E LÓGICA ---
 
 def salvar_no_banco(req: DiagnoseRequest, parsed_json: Dict[str, Any]):
     conn = None
@@ -122,9 +114,9 @@ def salvar_no_banco(req: DiagnoseRequest, parsed_json: Dict[str, Any]):
         ))
         conn.commit()
         cur.close()
-        logging.info(f"🚀 [DATABASE] Sucesso ao salvar registro de {req.usuario}")
+        logging.info(f"🚀 [DATABASE] Sucesso! Registro salvo para {req.usuario}")
     except Exception as e:
-        logging.error(f"❌ [DATABASE] Erro ao salvar: {e}")
+        logging.error(f"❌ [DATABASE] Erro crítico: {e}")
     finally:
         if conn: conn.close()
         for f in tmp_files:
@@ -150,54 +142,25 @@ async def get_history(usuario: Optional[str] = None):
             "user": r[5], "full_data": r[6]
         } for r in rows]
     except Exception as e:
-        logging.error(f"❌ [HISTORY] Erro ao buscar: {e}")
+        logging.error(f"❌ [HISTORY] Erro: {e}")
         return []
     finally:
         if conn: conn.close()
         for f in tmp_files:
             if os.path.exists(f): os.remove(f)
 
-# --- RESTO DO CÓDIGO (DIAGNOSE / PROMPT) ---
-
-def build_prompt(req: DiagnoseRequest) -> str:
-    return f"""
-    Aja como um Engenheiro de Manutenção Sênior e Especialista em Confiabilidade (RCM).
-    Gere um LAUDO TÉCNICO EXAUSTIVO para o ativo: {req.equipment_name}.
-    Inspetor Responsável: {req.usuario}
-    SINTOMAS: {req.symptoms}
-
-    RETORNE APENAS JSON:
-    {{
-      "summary": "Parecer técnico denso (mínimo 300 palavras)...",
-      "severity": "critical|high|medium|low",
-      "probable_causes": [{{ "cause": "...", "detail": "...", "likelihood": 90 }}],
-      "recommended_actions": ["passo 1", "passo 2"],
-      "impacto_operacional": "...",
-      "seguranca_loto": "...",
-      "componente_foco": "..."
-    }}
-    """
-
 @app.post("/diagnose", response_model=DiagnoseResponse)
 async def diagnose(req: DiagnoseRequest):
-    prompt = build_prompt(req)
     try:
-        raw = None
-        for model_name in ("gemini-2.0-flash", "gemini-flash-latest"):
-            try:
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content(prompt)
-                raw = response.text
-                if raw: break
-            except: continue
-        
-        if not raw: raise Exception("IA sem resposta.")
-        raw = raw.replace("```json", "").replace("```", "").strip()
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        prompt = f"Gere um laudo técnico para {req.equipment_name}. Sintomas: {req.symptoms}. Retorne apenas JSON."
+        response = model.generate_content(prompt)
+        raw = response.text.replace("```json", "").replace("```", "").strip()
         parsed = json.loads(raw)
         salvar_no_banco(req, parsed)
         return {"diagnosis": parsed, "raw_output": raw}
     except Exception as e:
-        logging.error("Erro: %s", traceback.format_exc())
+        logging.error(f"Erro: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
