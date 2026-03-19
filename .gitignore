@@ -249,3 +249,4 @@ __marimo__/
 
 # Scripts utilitários locais
 tools/atualizar_banco.py
+node_modules/
