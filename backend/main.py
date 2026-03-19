@@ -42,10 +42,7 @@ class DiagnoseResponse(BaseModel):
     diagnosis: Dict[str, Any]
     raw_output: str
 
-# --- FUNÇÃO DE CONEXÃO PROFISSIONAL (DECODIFICA BASE64) ---
-
 def get_db_connection():
-    """Lê o texto Base64 da Square Cloud e reconstrói os arquivos de certificado."""
     ca_b64 = os.getenv("DB_CA_CERT", "").strip().strip('"')
     cert_b64 = os.getenv("DB_CLIENT_CERT", "").strip().strip('"')
     key_b64 = os.getenv("DB_CLIENT_KEY", "").strip().strip('"')
@@ -84,8 +81,6 @@ def get_db_connection():
         )
         return conn, []
 
-# --- ROTAS E LÓGICA ---
-
 def salvar_no_banco(req: DiagnoseRequest, parsed_json: Dict[str, Any]):
     conn = None
     tmp_files = []
@@ -101,7 +96,7 @@ def salvar_no_banco(req: DiagnoseRequest, parsed_json: Dict[str, Any]):
             req.equipment_name,
             parsed_json.get("severity", "medium"),
             req.symptoms,
-            str(parsed_json.get("summary", "")),
+            str(parsed_json.get("summary", parsed_json.get("diagnosis", ""))),
             json.dumps(parsed_json.get("probable_causes", [])),
             json.dumps(parsed_json.get("recommended_actions", [])),
             json.dumps(parsed_json),
@@ -124,8 +119,6 @@ async def get_history(usuario: Optional[str] = None):
     try:
         conn, tmp_files = get_db_connection()
         cur = conn.cursor()
-        
-        # AJUSTE: Removida a coluna 'criado_em' que não existe no seu banco
         if usuario:
             cur.execute("SELECT id, equipamento, severidade, laudo_tecnico, usuario, json_completo FROM historico_manutencao WHERE usuario = %s ORDER BY id DESC", (usuario,))
         else:
@@ -133,18 +126,11 @@ async def get_history(usuario: Optional[str] = None):
         
         rows = cur.fetchall()
         cur.close()
-        
-        # AJUSTE: Mapeando os campos sem a coluna de data
         return [{
-            "id": r[0], 
-            "equipment": r[1], 
-            "severity": r[2], 
-            "diagnosis": r[3], 
-            "date": "Recente", # Valor padrão já que a coluna não existe
-            "user": r[4], 
-            "full_data": r[5]
+            "id": r[0], "equipment": r[1], "severity": r[2], 
+            "diagnosis": r[3], "date": "Recente", 
+            "user": r[4], "full_data": r[5]
         } for r in rows]
-        
     except Exception as e:
         logging.error(f"❌ [HISTORY] Erro: {e}")
         return []
@@ -156,10 +142,19 @@ async def get_history(usuario: Optional[str] = None):
 @app.post("/diagnose", response_model=DiagnoseResponse)
 async def diagnose(req: DiagnoseRequest):
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash", "gemini-flash-latest")
-        prompt = f"Gere um laudo técnico para {req.equipment_name}. Sintomas: {req.symptoms}. Retorne apenas JSON."
+        # Ajustado para o nome único que o sistema de 2026 exige
+        model = genai.GenerativeModel("gemini-2.0-flash") 
+        
+        prompt = f"Gere um laudo técnico para {req.equipment_name}. Sintomas: {req.symptoms}. Retorne APENAS o JSON puro, sem textos explicativos."
         response = model.generate_content(prompt)
-        raw = response.text.replace("```json", "").replace("```", "").strip()
+        
+        # Limpeza robusta do texto para evitar erros de JSON
+        raw = response.text.strip()
+        if "```json" in raw:
+            raw = raw.split("```json")[1].split("```")[0].strip()
+        elif "```" in raw:
+            raw = raw.split("```")[1].split("```")[0].strip()
+            
         parsed = json.loads(raw)
         salvar_no_banco(req, parsed)
         return {"diagnosis": parsed, "raw_output": raw}
