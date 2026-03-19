@@ -43,6 +43,7 @@ class DiagnoseResponse(BaseModel):
     raw_output: str
 
 def get_db_connection():
+    """Lê o texto Base64 da Square Cloud e reconstrói os arquivos de certificado."""
     ca_b64 = os.getenv("DB_CA_CERT", "").strip().strip('"')
     cert_b64 = os.getenv("DB_CLIENT_CERT", "").strip().strip('"')
     key_b64 = os.getenv("DB_CLIENT_KEY", "").strip().strip('"')
@@ -142,8 +143,8 @@ async def get_history(usuario: Optional[str] = None):
 @app.post("/diagnose", response_model=DiagnoseResponse)
 async def diagnose(req: DiagnoseRequest):
     try:
-        # Ajustado para o nome único que o sistema de 2026 exige
-        model = genai.GenerativeModel("gemini-2.0-flash") 
+        # NOME DO MODELO CORRIGIDO PARA COMPATIBILIDADE
+        model = genai.GenerativeModel("gemini-1.5-flash") 
         
         prompt = f"Gere um laudo técnico para {req.equipment_name}. Sintomas: {req.symptoms}. Retorne APENAS o JSON puro, sem textos explicativos."
         response = model.generate_content(prompt)
