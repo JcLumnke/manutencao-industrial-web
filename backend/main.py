@@ -46,21 +46,17 @@ class DiagnoseResponse(BaseModel):
 
 def get_db_connection():
     """Lê o texto Base64 da Square Cloud e reconstrói os arquivos de certificado."""
-    # Pega as tripas de letras que você colou no site
     ca_b64 = os.getenv("DB_CA_CERT", "").strip().strip('"')
     cert_b64 = os.getenv("DB_CLIENT_CERT", "").strip().strip('"')
     key_b64 = os.getenv("DB_CLIENT_KEY", "").strip().strip('"')
 
-    # Se estiver na Square Cloud (onde as variáveis existem)
     if ca_b64 and cert_b64 and key_b64:
         logging.info("🔧 Decodificando certificados Base64 na Nuvem...")
-        # Criamos arquivos temporários binários ('wb')
         ca_f = tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.crt')
         cert_f = tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.pem')
         key_f = tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.key')
 
         try:
-            # Transforma as letras de volta nos arquivos originais
             ca_f.write(base64.b64decode(ca_b64)); ca_f.flush()
             cert_f.write(base64.b64decode(cert_b64)); cert_f.flush()
             key_f.write(base64.b64decode(key_b64)); key_f.flush()
@@ -78,7 +74,6 @@ def get_db_connection():
                 if os.path.exists(f): os.remove(f)
             raise e
     else:
-        # Se você estiver rodando no seu computador (Local)
         logging.info("💻 Usando caminhos locais do Windows...")
         conn = psycopg2.connect(
             DB_URL,
@@ -129,18 +124,27 @@ async def get_history(usuario: Optional[str] = None):
     try:
         conn, tmp_files = get_db_connection()
         cur = conn.cursor()
+        
+        # AJUSTE: Removida a coluna 'criado_em' que não existe no seu banco
         if usuario:
-            cur.execute("SELECT id, equipamento, severidade, laudo_tecnico, criado_em, usuario, json_completo FROM historico_manutencao WHERE usuario = %s ORDER BY criado_em DESC", (usuario,))
+            cur.execute("SELECT id, equipamento, severidade, laudo_tecnico, usuario, json_completo FROM historico_manutencao WHERE usuario = %s ORDER BY id DESC", (usuario,))
         else:
-            cur.execute("SELECT id, equipamento, severidade, laudo_tecnico, criado_em, usuario, json_completo FROM historico_manutencao ORDER BY criado_em DESC LIMIT 50")
+            cur.execute("SELECT id, equipamento, severidade, laudo_tecnico, usuario, json_completo FROM historico_manutencao ORDER BY id DESC LIMIT 50")
         
         rows = cur.fetchall()
         cur.close()
+        
+        # AJUSTE: Mapeando os campos sem a coluna de data
         return [{
-            "id": r[0], "equipment": r[1], "severity": r[2], 
-            "diagnosis": r[3], "date": r[4].isoformat(), 
-            "user": r[5], "full_data": r[6]
+            "id": r[0], 
+            "equipment": r[1], 
+            "severity": r[2], 
+            "diagnosis": r[3], 
+            "date": "Recente", # Valor padrão já que a coluna não existe
+            "user": r[4], 
+            "full_data": r[5]
         } for r in rows]
+        
     except Exception as e:
         logging.error(f"❌ [HISTORY] Erro: {e}")
         return []
