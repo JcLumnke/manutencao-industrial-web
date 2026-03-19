@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import jsPDF from 'jspdf'
-import 'jspdf-autotable'
+import autoTable from 'jspdf-autotable' // Mudança aqui: importação direta do autoTable
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://manutencao-industrial-julio.squareweb.app'
 
@@ -10,18 +10,14 @@ export default function App() {
   const [equipmentName, setEquipmentName] = useState('')
   const [loading, setLoading] = useState(false)
   const [diagnosis, setDiagnosis] = useState(null)
-  
-  // Novo: Estado para o Usuário (pega do navegador se já existir)
   const [usuario, setUsuario] = useState(() => localStorage.getItem('maint_user') || 'Julio')
   const [history, setHistory] = useState([])
 
-  // Sincroniza o nome do usuário no navegador
   useEffect(() => {
     localStorage.setItem('maint_user', usuario)
     fetchHistory()
   }, [usuario])
 
-  // Busca histórico real do banco de dados
   const fetchHistory = async () => {
     try {
       const res = await fetch(`${API_URL}/history?usuario=${usuario}`)
@@ -42,13 +38,12 @@ export default function App() {
         body: JSON.stringify({ 
           symptoms, 
           equipment_name: equipmentName || 'Equipamento',
-          usuario: usuario // Enviando o nome preenchido
+          usuario: usuario 
         })
       })
       const json = await res.json()
       setDiagnosis(json.diagnosis)
-      fetchHistory() // Atualiza a lista após salvar
-      setActiveTab('diagnóstico') 
+      fetchHistory()
     } catch (err) {
       alert("Erro na conexão com o servidor.")
     } finally {
@@ -56,39 +51,45 @@ export default function App() {
     }
   }
 
-  // Função para Gerar o PDF A4 Profissional
   const exportPDF = (item) => {
     const doc = new jsPDF()
-    const data = item.full_data || item
-
+    // Resolvemos o problema do item que vem direto da IA vs o que vem do Banco
+    const rawData = item.full_data || item
+    
     doc.setFontSize(18)
     doc.setTextColor(0, 74, 140)
     doc.text('LAUDO TÉCNICO DE MANUTENÇÃO IA', 20, 20)
     
     doc.setFontSize(10)
     doc.setTextColor(100)
-    doc.text(`Data: ${new Date(item.date).toLocaleString('pt-BR')}`, 20, 30)
+    const dataExibicao = item.date && item.date !== "Recente" ? new Date(item.date).toLocaleString('pt-BR') : "Gerado Agora"
+    
+    doc.text(`Data: ${dataExibicao}`, 20, 30)
     doc.text(`Responsável: ${item.user || usuario}`, 20, 35)
-    doc.text(`Ativo: ${item.equipment}`, 20, 40)
+    doc.text(`Ativo: ${item.equipment || equipmentName}`, 20, 40)
 
-    doc.autoTable({
+    // Chamada corrigida do autoTable que evita o erro de "not a function"
+    autoTable(doc, {
       startY: 50,
       head: [['Campo', 'Detalhes']],
       body: [
-        ['Severidade', (item.severity || 'N/A').toUpperCase()],
-        ['Componente Foco', data.componente_foco || 'Geral'],
-        ['Parecer Técnico', data.summary || item.diagnosis],
-        ['Impacto Operacional', data.impacto_operacional || 'Não informado'],
-        ['Segurança LOTO', data.seguranca_loto || 'Seguir normas padrão']
+        ['Severidade', (item.severity || rawData.severity || 'N/A').toUpperCase()],
+        ['Componente Foco', rawData.componente_foco || 'Geral'],
+        ['Parecer Técnico', rawData.summary || item.diagnosis || 'Não disponível'],
+        ['Impacto Operacional', rawData.impacto_operacional || 'Não informado'],
+        ['Segurança LOTO', rawData.seguranca_loto || 'Seguir normas padrão']
       ],
       theme: 'striped',
-      headStyles: { fillColor: [0, 74, 140] }
+      headStyles: { fillColor: [0, 74, 140] },
+      columnStyles: {
+        1: { cellWidth: 130 } // Dá mais espaço para o texto longo do laudo
+      },
+      styles: { overflow: 'linebreak' } // Garante que as 300 palavras quebrem linha
     })
 
-    doc.save(`Laudo_${item.equipment}_${usuario}.pdf`)
+    doc.save(`Laudo_${item.equipment || 'Analise'}_${usuario}.pdf`)
   }
 
-  // Lógica do Gráfico (Mantida a sua, mas usando o history do banco)
   const getSeverityData = () => {
     const counts = { critical: 0, high: 0, medium: 0, low: 0 };
     history.forEach(h => { if (counts[h.severity] !== undefined) counts[h.severity]++; });
@@ -116,7 +117,6 @@ export default function App() {
           </div>
         </div>
         
-        {/* Campo de Usuário no Header */}
         <div style={{ textAlign: 'right' }}>
           <label style={{ fontSize: '12px', display: 'block', opacity: 0.8 }}>TÉCNICO RESPONSÁVEL</label>
           <input 
@@ -204,7 +204,6 @@ export default function App() {
                 </div>
               </div>
             </div>
-            {/* Gráfico de barras mantido e automático */}
             <div style={{ background: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
               <h3 style={{ color: '#004a8c', marginBottom: '25px' }}>Volume por Equipamento</h3>
               {Array.from(new Set(history.map(h => h.equipment))).map(equip => {
