@@ -14,9 +14,6 @@ logging.basicConfig(level=logging.INFO)
 
 # --- CONFIGURAÇÕES DO BANCO SQUARE CLOUD ---
 DB_URL = "postgresql://squarecloud:TZeCqGnuCOEeqAuJ7hfgPNKG@square-cloud-db-ba4b27ddd83a41578b0a9853e83c7116.squareweb.app:7116/squarecloud"
-SSL_ROOT = r"C:\Users\julio\Downloads\ca-certificate.crt" if os.name == 'nt' else "/application/ca-certificate.crt"
-SSL_CERT = r"C:\Users\julio\Downloads\certificate.pem" if os.name == 'nt' else "/application/certificate.pem"
-SSL_KEY = r"C:\Users\julio\Downloads\private-key.key" if os.name == 'nt' else "/application/private-key.key"
 
 # Configuração do Gemini
 try:
@@ -50,15 +47,26 @@ class DiagnoseResponse(BaseModel):
 # --- FUNÇÕES AUXILIARES ---
 
 def salvar_no_banco(req: DiagnoseRequest, parsed_json: Dict[str, Any]):
-    """Salva o diagnóstico na Square Cloud incluindo o nome do técnico."""
+    """Salva o diagnóstico na Square Cloud com adaptação de ambiente (Local vs Nuvem)."""
     try:
-        conn = psycopg2.connect(
-            DB_URL,
-            sslmode="verify-full",
-            sslrootcert=SSL_ROOT,
-            sslcert=SSL_CERT,
-            sslkey=SSL_KEY
-        )
+        # Detecta se está rodando no seu Windows (nt) ou na Square Cloud (posix/linux)
+        if os.name == 'nt':
+            # Configuração para o seu COMPUTADOR LOCAL (Downloads)
+            conn = psycopg2.connect(
+                DB_URL,
+                sslmode="verify-full",
+                sslrootcert=r"C:\Users\julio\Downloads\ca-certificate.crt",
+                sslcert=r"C:\Users\julio\Downloads\certificate.pem",
+                sslkey=r"C:\Users\julio\Downloads\private-key.key"
+            )
+        else:
+            # Configuração para a SQUARE CLOUD (Conexão interna segura)
+            # 'require' criptografa a conexão sem exigir arquivos físicos que não existem na nuvem
+            conn = psycopg2.connect(
+                DB_URL,
+                sslmode="require"
+            )
+
         cur = conn.cursor()
         
         query = """
@@ -75,7 +83,7 @@ def salvar_no_banco(req: DiagnoseRequest, parsed_json: Dict[str, Any]):
             json.dumps(parsed_json.get("probable_causes", [])),
             json.dumps(parsed_json.get("recommended_actions", [])),
             json.dumps(parsed_json),
-            req.usuario # Grava o nome enviado pelo frontend
+            req.usuario 
         ))
         
         conn.commit()
@@ -120,7 +128,6 @@ async def diagnose(req: DiagnoseRequest):
     prompt = build_prompt(req)
     try:
         raw = None
-        # Loop para tentar os modelos que funcionam no seu ambiente
         for model_name in ("gemini-2.0-flash", "gemini-flash-latest"):
             try:
                 model = genai.GenerativeModel(model_name)
@@ -131,7 +138,6 @@ async def diagnose(req: DiagnoseRequest):
         
         if not raw: raise Exception("IA não retornou dados.")
 
-        # Limpeza rápida de tags markdown caso a IA as inclua
         raw = raw.replace("```json", "").replace("```", "").strip()
         parsed = json.loads(raw)
 
