@@ -1,23 +1,36 @@
 import React, { useState, useEffect } from 'react'
+import jsPDF from 'jspdf'
+import 'jspdf-autotable'
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://manutencao-industrial-julio.squareweb.app'
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('diagnóstico')
   const [symptoms, setSymptoms] = useState('')
-  const [machineId, setMachineId] = useState('')
   const [equipmentName, setEquipmentName] = useState('')
   const [loading, setLoading] = useState(false)
   const [diagnosis, setDiagnosis] = useState(null)
   
-  const [history, setHistory] = useState(() => {
-    const saved = localStorage.getItem('maint_history');
-    return saved ? JSON.parse(saved) : [];
-  });
+  // Novo: Estado para o Usuário (pega do navegador se já existir)
+  const [usuario, setUsuario] = useState(() => localStorage.getItem('maint_user') || 'Julio')
+  const [history, setHistory] = useState([])
 
+  // Sincroniza o nome do usuário no navegador
   useEffect(() => {
-    localStorage.setItem('maint_history', JSON.stringify(history));
-  }, [history]);
+    localStorage.setItem('maint_user', usuario)
+    fetchHistory()
+  }, [usuario])
+
+  // Busca histórico real do banco de dados
+  const fetchHistory = async () => {
+    try {
+      const res = await fetch(`${API_URL}/history?usuario=${usuario}`)
+      const data = await res.json()
+      setHistory(data)
+    } catch (err) {
+      console.error("Erro ao buscar histórico:", err)
+    }
+  }
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -28,30 +41,54 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           symptoms, 
-          equipment_name: equipmentName || 'Machine',
-          machine_id: machineId || undefined 
+          equipment_name: equipmentName || 'Equipamento',
+          usuario: usuario // Enviando o nome preenchido
         })
       })
       const json = await res.json()
-      const newDiagnosis = json.diagnosis || json
-      setDiagnosis(newDiagnosis)
-      
-      const newEntry = {
-        id: Date.now(),
-        date: new Date().toLocaleDateString('pt-BR'),
-        equipment: equipmentName || 'General Machine',
-        severity: newDiagnosis.severity || 'low',
-        summary: newDiagnosis.summary
-      }
-      setHistory([newEntry, ...history])
+      setDiagnosis(json.diagnosis)
+      fetchHistory() // Atualiza a lista após salvar
+      setActiveTab('diagnóstico') 
     } catch (err) {
-      console.error(err)
+      alert("Erro na conexão com o servidor.")
     } finally {
       setLoading(false)
     }
   }
 
-  // Helper for Severity Pie Chart
+  // Função para Gerar o PDF A4 Profissional
+  const exportPDF = (item) => {
+    const doc = new jsPDF()
+    const data = item.full_data || item
+
+    doc.setFontSize(18)
+    doc.setTextColor(0, 74, 140)
+    doc.text('LAUDO TÉCNICO DE MANUTENÇÃO IA', 20, 20)
+    
+    doc.setFontSize(10)
+    doc.setTextColor(100)
+    doc.text(`Data: ${new Date(item.date).toLocaleString('pt-BR')}`, 20, 30)
+    doc.text(`Responsável: ${item.user || usuario}`, 20, 35)
+    doc.text(`Ativo: ${item.equipment}`, 20, 40)
+
+    doc.autoTable({
+      startY: 50,
+      head: [['Campo', 'Detalhes']],
+      body: [
+        ['Severidade', (item.severity || 'N/A').toUpperCase()],
+        ['Componente Foco', data.componente_foco || 'Geral'],
+        ['Parecer Técnico', data.summary || item.diagnosis],
+        ['Impacto Operacional', data.impacto_operacional || 'Não informado'],
+        ['Segurança LOTO', data.seguranca_loto || 'Seguir normas padrão']
+      ],
+      theme: 'striped',
+      headStyles: { fillColor: [0, 74, 140] }
+    })
+
+    doc.save(`Laudo_${item.equipment}_${usuario}.pdf`)
+  }
+
+  // Lógica do Gráfico (Mantida a sua, mas usando o history do banco)
   const getSeverityData = () => {
     const counts = { critical: 0, high: 0, medium: 0, low: 0 };
     history.forEach(h => { if (counts[h.severity] !== undefined) counts[h.severity]++; });
@@ -62,7 +99,6 @@ export default function App() {
       medium: (counts.medium / total) * 100,
       low: (counts.low / total) * 100
     };
-    // Cumulative for conic-gradient
     const c1 = pcts.critical;
     const c2 = c1 + pcts.high;
     const c3 = c2 + pcts.medium;
@@ -71,11 +107,24 @@ export default function App() {
 
   return (
     <div className="app" style={{ fontFamily: 'Segoe UI, sans-serif', backgroundColor: '#f0f2f5', minHeight: '100vh' }}>
-      <header style={{ backgroundColor: '#004a8c', color: 'white', padding: '25px 5%', display: 'flex', alignItems: 'center', gap: '20px' }}>
-        <div style={{ fontSize: '45px' }}>⚙️</div> 
-        <div style={{ textAlign: 'left' }}>
-          <h1 style={{ margin: 0, fontSize: '24px' }}>Diagnóstico de Manutenção Industrial</h1>
-          <p style={{ margin: 0, opacity: 0.8, fontSize: '14px' }}>AI-Powered Failure Analysis</p>
+      <header style={{ backgroundColor: '#004a8c', color: 'white', padding: '25px 5%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          <div style={{ fontSize: '45px' }}>⚙️</div> 
+          <div style={{ textAlign: 'left' }}>
+            <h1 style={{ margin: 0, fontSize: '24px' }}>Diagnóstico de Manutenção Industrial</h1>
+            <p style={{ margin: 0, opacity: 0.8, fontSize: '14px' }}>AI-Powered Reliability Engineering</p>
+          </div>
+        </div>
+        
+        {/* Campo de Usuário no Header */}
+        <div style={{ textAlign: 'right' }}>
+          <label style={{ fontSize: '12px', display: 'block', opacity: 0.8 }}>TÉCNICO RESPONSÁVEL</label>
+          <input 
+            type="text" 
+            value={usuario} 
+            onChange={e => setUsuario(e.target.value)}
+            style={{ padding: '8px', borderRadius: '4px', border: 'none', fontWeight: 'bold', color: '#004a8c', width: '150px' }}
+          />
         </div>
       </header>
 
@@ -89,38 +138,56 @@ export default function App() {
         {activeTab === 'diagnóstico' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '30px' }}>
             <form onSubmit={handleSubmit} style={{ background: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
-              <label style={{fontWeight:'bold', color:'#555'}}>Equipamento</label>
-              <input style={{ width: '100%', padding: '12px', margin: '8px 0 20px', borderRadius: '6px', border: '1px solid #ddd' }} value={equipmentName} onChange={e => setEquipmentName(e.target.value)} placeholder="Ex: Motor CA" />
-              <label style={{fontWeight:'bold', color:'#555'}}>Sintomas Detectados</label>
-              <textarea style={{ width: '100%', padding: '12px', margin: '8px 0 20px', borderRadius: '6px', border: '1px solid #ddd' }} rows={6} value={symptoms} onChange={e => setSymptoms(e.target.value)} required />
-              <button style={{ width: '100%', padding: '15px', background: '#004a8c', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight:'bold', fontSize:'16px' }}>{loading ? 'ANALISANDO IA...' : 'GERAR DIAGNÓSTICO'}</button>
+              <label style={{fontWeight:'bold', color:'#555'}}>Equipamento / Ativo</label>
+              <input style={{ width: '100%', padding: '12px', margin: '8px 0 20px', borderRadius: '6px', border: '1px solid #ddd' }} value={equipmentName} onChange={e => setEquipmentName(e.target.value)} placeholder="Ex: Bomba de Recalque 02" required />
+              
+              <label style={{fontWeight:'bold', color:'#555'}}>Relato de Sintomas / Anomalias</label>
+              <textarea style={{ width: '100%', padding: '12px', margin: '8px 0 20px', borderRadius: '6px', border: '1px solid #ddd' }} rows={6} value={symptoms} onChange={e => setSymptoms(e.target.value)} placeholder="Descreva ruídos, vibrações, temperatura ou falhas elétricas..." required />
+              
+              <button disabled={loading} style={{ width: '100%', padding: '15px', background: loading ? '#ccc' : '#004a8c', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight:'bold', fontSize:'16px' }}>
+                {loading ? 'PROCESSANDO LAUDO...' : 'GERAR LAUDO TÉCNICO'}
+              </button>
             </form>
 
             <section style={{ background: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
-              <h2 style={{ borderBottom: '2px solid #f0f2f5', paddingBottom: '15px', color: '#004a8c' }}>Resultado {equipmentName && <small style={{color:'#1890ff'}}>({equipmentName})</small>}</h2>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #f0f2f5', paddingBottom: '15px' }}>
+                <h2 style={{ color: '#004a8c', margin: 0 }}>Resultado da Análise</h2>
+                {diagnosis && (
+                  <button onClick={() => exportPDF(diagnosis)} style={{ background: '#52c41a', color: '#fff', border: 'none', padding: '5px 15px', borderRadius: '4px', cursor: 'pointer' }}>
+                    📄 EXPORTAR PDF
+                  </button>
+                )}
+              </div>
               {diagnosis ? (
                 <div style={{ marginTop: '20px', lineHeight: '1.6' }}>
-                  <p><strong>Severidade:</strong> <span style={{ color: diagnosis.severity === 'critical' ? 'red' : '#faad14', textTransform: 'uppercase', fontWeight:'bold' }}>{diagnosis.severity}</span></p>
-                  <p><strong>Resumo Técnico:</strong> {diagnosis.summary}</p>
+                  <p><strong>Severidade:</strong> <span style={{ color: diagnosis.severity === 'critical' ? 'red' : '#faad14', fontWeight:'bold' }}>{diagnosis.severity.toUpperCase()}</span></p>
+                  <p><strong>Parecer:</strong> {diagnosis.summary}</p>
+                  <div style={{ background: '#f9f9f9', padding: '15px', borderRadius: '8px', marginTop: '15px' }}>
+                     <p><strong>Impacto:</strong> {diagnosis.impacto_operacional}</p>
+                     <p><strong>Segurança:</strong> {diagnosis.seguranca_loto}</p>
+                  </div>
                 </div>
-              ) : <p style={{ color: '#999', marginTop: '40px', textAlign:'center' }}>Aguardando entrada de dados para análise do Gemini.</p>}
+              ) : <p style={{ color: '#999', marginTop: '40px', textAlign:'center' }}>Aguardando entrada para diagnóstico...</p>}
             </section>
           </div>
         )}
 
         {activeTab === 'histórico' && (
           <div style={{ background: '#fff', padding: '30px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
-            <h2 style={{ color: '#004a8c', marginBottom: '25px' }}>Registros de Consultas</h2>
+            <h2 style={{ color: '#004a8c', marginBottom: '25px' }}>Histórico de {usuario}</h2>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr style={{ textAlign: 'left', borderBottom: '2px solid #004a8c', color: '#004a8c' }}><th style={{padding:'10px'}}>Data</th><th>Equipamento</th><th>Severidade</th></tr></thead>
+              <thead><tr style={{ textAlign: 'left', borderBottom: '2px solid #004a8c', color: '#004a8c' }}><th style={{padding:'10px'}}>Data</th><th>Equipamento</th><th>Severidade</th><th>Ações</th></tr></thead>
               <tbody>
-                {history.length > 0 ? history.map(h => (
+                {history.map(h => (
                   <tr key={h.id} style={{ borderBottom: '1px solid #eee' }}>
-                    <td style={{ padding: '15px 10px' }}>{h.date}</td>
+                    <td style={{ padding: '15px 10px' }}>{new Date(h.date).toLocaleDateString()}</td>
                     <td>{h.equipment}</td>
                     <td style={{ color: h.severity === 'critical' ? 'red' : '#faad14', fontWeight:'600' }}>{h.severity}</td>
+                    <td>
+                      <button onClick={() => exportPDF(h)} style={{ cursor: 'pointer', background: 'none', border: '1px solid #004a8c', color: '#004a8c', borderRadius: '4px', padding: '2px 8px' }}>Gerar PDF</button>
+                    </td>
                   </tr>
-                )) : <tr><td colSpan="3" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>Nenhum diagnóstico realizado ainda.</td></tr>}
+                ))}
               </tbody>
             </table>
           </div>
@@ -128,44 +195,30 @@ export default function App() {
 
         {activeTab === 'dashboard' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '30px' }}>
-            {/* Severity Pie Chart with Total in Center */}
             <div style={{ background: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', textAlign:'center' }}>
-              <h3 style={{ color: '#004a8c', marginBottom: '30px' }}>Distribuição de Severidade</h3>
-              <div style={{ 
-                width: '200px', height: '200px', borderRadius: '50%',
-                background: getSeverityData(),
-                margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: '0 4px 10px rgba(0,0,0,0.1)'
-              }}>
+              <h3 style={{ color: '#004a8c', marginBottom: '30px' }}>Severidade em {usuario}</h3>
+              <div style={{ width: '200px', height: '200px', borderRadius: '50%', background: getSeverityData(), margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <div style={{ width: '130px', height: '130px', background: 'white', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                   <span style={{ fontSize: '32px', fontWeight: 'bold', color: '#004a8c' }}>{history.length}</span>
-                  <small style={{ color: '#888', textTransform: 'uppercase', fontSize: '10px' }}>Consultas</small>
+                  <small style={{ color: '#888', textTransform: 'uppercase', fontSize: '10px' }}>Laudos</small>
                 </div>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'center', gap: '15px', marginTop: '25px', fontSize: '12px' }}>
-                {[['Crítica','#ff4d4f'], ['Alta','#ff7a45'], ['Média','#1890ff'], ['Baixa','#52c41a']].map(l => (
-                  <div key={l[0]} style={{ display:'flex', alignItems:'center', gap:'5px' }}><div style={{width:'12px', height:'12px', background:l[1], borderRadius:'2px'}}/>{l[0]}</div>
-                ))}
-              </div>
             </div>
-
-            {/* Equipment Volume Horizontal Chart */}
+            {/* Gráfico de barras mantido e automático */}
             <div style={{ background: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
               <h3 style={{ color: '#004a8c', marginBottom: '25px' }}>Volume por Equipamento</h3>
               {Array.from(new Set(history.map(h => h.equipment))).map(equip => {
                 const count = history.filter(h => h.equipment === equip).length;
-                const pct = history.length > 0 ? (count / history.length) * 100 : 0;
+                const pct = (count / (history.length || 1)) * 100;
                 return (
-                  <div key={equip} style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '20px' }}>
-                    <div style={{ width: '140px', fontWeight: 'bold', fontSize: '13px', color: '#444', textAlign: 'right', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{equip}</div>
-                    <div style={{ flex: 1, background: '#f0f2f5', height: '24px', borderRadius: '4px', position: 'relative' }}>
-                      <div style={{ background: '#004a8c', width: `${pct}%`, height: '100%', borderRadius: '4px', transition: 'width 0.8s ease' }} />
-                      <span style={{ position: 'absolute', right: '10px', top: '2px', fontSize: '12px', fontWeight: 'bold', color: pct > 90 ? '#fff' : '#004a8c' }}>{count}</span>
+                  <div key={equip} style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '15px' }}>
+                    <div style={{ width: '120px', fontSize: '12px' }}>{equip}</div>
+                    <div style={{ flex: 1, background: '#eee', height: '15px', borderRadius: '10px' }}>
+                      <div style={{ width: `${pct}%`, background: '#004a8c', height: '100%', borderRadius: '10px' }} />
                     </div>
                   </div>
                 )
               })}
-              {history.length === 0 && <p style={{ textAlign: 'center', color: '#999', marginTop: '40px' }}>Realize diagnósticos para ver este gráfico.</p>}
             </div>
           </div>
         )}
