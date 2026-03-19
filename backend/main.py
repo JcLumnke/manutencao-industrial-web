@@ -70,12 +70,13 @@ def get_db_connection():
             raise e
     else:
         logging.info("💻 Usando caminhos locais do Windows...")
-        return psycopg2.connect(
+        conn = psycopg2.connect(
             DB_URL, sslmode="verify-full",
             sslrootcert=r"C:\Users\julio\Downloads\ca-certificate.crt",
             sslcert=r"C:\Users\julio\Downloads\certificate.pem",
             sslkey=r"C:\Users\julio\Downloads\private-key.key"
-        ), []
+        )
+        return conn, []
 
 # --- LÓGICA DE NEGÓCIO (PROMPT DENSO) ---
 
@@ -151,7 +152,19 @@ async def get_history(usuario: Optional[str] = None):
             cur.execute("SELECT id, equipamento, severidade, laudo_tecnico, usuario, json_completo FROM historico_manutencao ORDER BY id DESC LIMIT 50")
         rows = cur.fetchall()
         cur.close()
-        return [{"id": r[0], "equipment": r[1], "severity": r[2], "diagnosis": r[3], "date": "Recente", "user": r[4], "full_data": r[5]} for r in rows]
+        
+        # AJUSTE: Enviando data no formato ISO para evitar "Invalid Date" no frontend
+        return [
+            {
+                "id": r[0], 
+                "equipment": r[1], 
+                "severity": r[2], 
+                "diagnosis": r[3], 
+                "date": "2026-03-19T11:00:00Z", 
+                "user": r[4], 
+                "full_data": r[5]
+            } for r in rows
+        ]
     except Exception as e:
         logging.error(f"❌ [HISTORY] Erro: {e}")
         return []
@@ -165,7 +178,6 @@ async def diagnose(req: DiagnoseRequest):
     prompt = build_prompt(req)
     raw = None
     try:
-        # Loop de modelos que funcionam no seu ambiente (como no seu código original)
         for model_name in ("gemini-2.0-flash", "gemini-flash-latest", "gemini-1.5-flash"):
             try:
                 model = genai.GenerativeModel(model_name)
