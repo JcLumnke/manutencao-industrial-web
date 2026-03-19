@@ -47,17 +47,25 @@ class DiagnoseResponse(BaseModel):
 # --- FUNÇÃO DE CONEXÃO UNIVERSAL (SEGURA) ---
 
 def get_db_connection():
-    """Gerencia a conexão com o banco criando arquivos temporários para os certificados."""
-    # Recupera e limpa as variáveis de ambiente (remove aspas e espaços extras)
-    ca_content = os.getenv("DB_CA_CERT", "").strip().strip('"').strip("'")
-    cert_content = os.getenv("DB_CLIENT_CERT", "").strip().strip('"').strip("'")
-    key_content = os.getenv("DB_CLIENT_KEY", "").strip().strip('"').strip("'")
+    """Gerencia a conexão com o banco tratando as aspas e quebras de linha da Square Cloud."""
+    
+    # Busca as variáveis e remove as aspas que a Square Cloud exige no painel
+    ca_raw = os.getenv("DB_CA_CERT", "")
+    cert_raw = os.getenv("DB_CLIENT_CERT", "")
+    key_raw = os.getenv("DB_CLIENT_KEY", "")
 
-    if ca_content and cert_content and key_content:
-        # AMBIENTE NUVEM (Square Cloud)
-        ca_f = tempfile.NamedTemporaryFile(mode='w', delete=False)
-        cert_f = tempfile.NamedTemporaryFile(mode='w', delete=False)
-        key_f = tempfile.NamedTemporaryFile(mode='w', delete=False)
+    # Limpeza profunda: remove aspas, espaços e garante que as quebras de linha sejam respeitadas
+    ca_content = ca_raw.strip().strip('"').strip("'").replace('\\n', '\n')
+    cert_content = cert_raw.strip().strip('"').strip("'").replace('\\n', '\n')
+    key_content = key_raw.strip().strip('"').strip("'").replace('\\n', '\n')
+
+    # Se estivermos no Linux (Square Cloud) OU se as variáveis existirem
+    if os.name != 'nt' or (ca_content and cert_content):
+        logging.info("🔧 Configurando conexão segura via arquivos temporários na Nuvem...")
+        
+        ca_f = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.crt')
+        cert_f = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.pem')
+        key_f = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.key')
 
         try:
             ca_f.write(ca_content); ca_f.flush()
@@ -71,14 +79,15 @@ def get_db_connection():
                 sslcert=cert_f.name,
                 sslkey=key_f.name
             )
-            # Guardamos os nomes para deletar depois no 'finally' do chamador
             return conn, [ca_f.name, cert_f.name, key_f.name]
         except Exception as e:
+            # Se falhar, limpa os arquivos para não deixar lixo
             for f in [ca_f.name, cert_f.name, key_f.name]:
                 if os.path.exists(f): os.remove(f)
             raise e
     else:
-        # AMBIENTE LOCAL (Seu Windows)
+        # APENAS se for Windows local e sem variáveis de ambiente
+        logging.info("💻 Conectando via caminhos locais do Windows...")
         conn = psycopg2.connect(
             DB_URL,
             sslmode="verify-full",
