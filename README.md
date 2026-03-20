@@ -17,16 +17,14 @@ A aplicação segue uma arquitetura **desacoplada (Frontend / Backend)**, garant
 
 ## 🔄 Fluxo de Comunicação (Data Flow)
 
-```mermaid
 graph TD
     A[Frontend: React + Vite] -->|Requisições HTTP| B[Backend: FastAPI + Python]
-    B -->|Prompt estruturado| C[Google Gemini 2.0 Flash]
-    C -->|Fallback automático| E[Gemini-Flash-Latest]
-    C -->|Resposta JSON estruturada| B
-    B -->|Diagnóstico validado| A
-    B -->|Persistência centralizada| F[Banco de Dados (SquareCloud)]
-    A -->|Cache local opcional| D[LocalStorage do Navegador]
-```
+    B -->|Prompt Sênior| C[Google Gemini 2.0 Flash]
+    C -->|Fallback automático| E[Gemini-1.5-Flash]
+    C -->|JSON Estruturado| B
+    B -->|Persistência SSL| F[(PostgreSQL SquareCloud)]
+    B -->|Laudo Validado| A
+    A -->|Exportação| G[PDF Profissional]
 
 ---
 
