@@ -9,8 +9,6 @@ Este projeto representa o esforço técnico final da **Da disciplina Inteligênc
 - ⚠️ Nível de severidade  
 - 🛠️ Plano de ação recomendado  
 
-O código do projeto foi integralmente gerado pelo Agente **Codex da Open IA** 
-
 ---
 
 # 🏗️ 1. Arquitetura do Sistema
@@ -76,11 +74,8 @@ MANUTENCAO-INDUSTRIAL-WEB/
 │
 └── README.md               
     └── Documentação técnica
+    
 ```
-
-Observação: o projeto agora persiste dados em uma instância de Banco de Dados hospedada na mesma conta/projeto do backend na SquareCloud. Há um script de utilitários para atualização/manutenção do esquema em `tools/atualizar_banco.py`.
-
----
 
 # 🛠️ 3. Stack Tecnológica
 
